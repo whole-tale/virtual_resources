@@ -13,6 +13,7 @@ import shutil
 import stat
 
 from girder import events
+from girder.api.v1.folder import Folder as FolderResource
 from girder.api.rest import setResponseHeader, boundHandler
 from girder.constants import AccessType
 from girder.exceptions import (
@@ -106,18 +107,30 @@ def _File(path):
 def validate_event(func):
     def wrapper(self, event):
         params = event.info.get("params", {})
-        obj_id = (
-            event.info.get("id", "")
-            or params.get("parentId", "")
+        obj_id = event.info.get("id", "")
+        parent_id = (
+            params.get("parentId", "")
             or params.get("folderId", "")
             or params.get("itemId", "")
         )
-        if obj_id == str(BASE_FOLDER["_id"]):  # root
-            path = pathlib.Path(LOCAL_ROOT)
-            func(self, event, path)
-        elif obj_id.startswith("wtlocal:"):
-            path = base64.b64decode(obj_id[8:])  # path
-            path = pathlib.Path(path.decode())
+
+        # TODO: This might be costly. Is there a better way?
+        virtual_folders = {
+            str(folder["_id"])
+            for folder in Folder().find({"isMapping": True}, projection={"_id"})
+        }
+
+        path = None
+        if obj_id.startswith("wtlocal:"):
+            path = base64.b64decode(obj_id[8:]).decode()
+        elif parent_id.startswith("wtlocal:"):
+            path = base64.b64decode(parent_id[8:]).decode()
+        elif parent_id in virtual_folders:  # root
+            root_folder = Folder().load(parent_id, force=True)
+            path = root_folder["fsPath"]
+
+        if path:
+            path = pathlib.Path(path)
             if path.is_absolute():
                 func(self, event, path)
 
@@ -550,40 +563,142 @@ def delete_resources(self, event):
         event.preventDefault().addResponse(None)
 
 
+def _validateFolder(event):
+    doc = event.info
+
+    if "isMapping" in doc and not isinstance(doc["isMapping"], bool):
+        raise ValidationException(
+            "The isMapping field must be boolean.", field="isMapping"
+        )
+
+    if doc.get("isMapping"):
+        # Make sure it doesn't have children
+        if list(Folder().childItems(doc, limit=1)):
+            raise ValidationException(
+                "Virtual folders may not contain child items.", field="isMapping"
+            )
+        if list(
+            Folder().find(
+                {"parentId": doc["_id"], "parentCollection": "folder"}, limit=1
+            )
+        ):
+            raise ValidationException(
+                "Virtual folders may not contain child folders.", field="isMapping"
+            )
+    if doc["parentCollection"] == "folder":
+        parent = Folder().load(event.info["parentId"], force=True, exc=True)
+        if parent.get("isMapping"):
+            raise ValidationException(
+                "You may not place folders under a virtual folder.", field="folderId"
+            )
+
+
+@boundHandler
+def mapping_folder_update(self, event):
+    params = event.info["params"]
+    if {"isMapping", "fsPath"} & set(params):
+        folder = Folder().load(event.info["returnVal"]["_id"], force=True)
+        update = False
+
+        if params.get("isMapping") is not None:
+            update = True
+            folder["isMapping"] = params["isMapping"]
+        if params.get("fsPath") is not None:
+            update = True
+            folder["fsPath"] = params["fsPath"]
+
+        if update:
+            self.requireAdmin(
+                self.getCurrentUser(), "Must be admin to setup virtual folders."
+            )
+            folder = Folder().filter(Folder().save(folder), self.getCurrentUser())
+            event.preventDefault().addResponse(folder)
+
+
 def load(info):
-    global BASE_COLLECTION, BASE_FOLDER
+    global BASE_COLLECTION
     BASE_COLLECTION = Collection().createCollection(
         "Local tmp", public=True, reuseExisting=True
     )
-    BASE_FOLDER = Folder().createFolder(
+    base_folder = Folder().createFolder(
         BASE_COLLECTION, "tmp", parentType="collection", public=True, reuseExisting=True
     )
+    base_folder["isMapping"] = True
+    base_folder["fsPath"] = "/tmp"
+    Folder().save(base_folder)
 
-    name = "local_objects"
-    events.bind("rest.get.item.before", name, get_child_items)
-    events.bind("rest.post.item.before", name, create_item)
-    events.bind("rest.get.item/:id.before", name, get_item_info)
-    events.bind("rest.put.item/:id.before", name, rename_item)
-    events.bind("rest.delete.item/:id.before", name, remove_item)
-    events.bind("rest.post.item/:id/copy.before", name, copy_item)
-    events.bind("rest.get.item/:id/download.before", name, file_download)
-    events.bind("rest.get.item/:id/files.before", name, get_child_files)
-    events.bind("rest.get.item/:id/rootpath.before", name, item_root_path)
+    base_folder = Folder().createFolder(
+        BASE_COLLECTION,
+        "home",
+        parentType="collection",
+        public=True,
+        reuseExisting=True,
+    )
+    base_folder["isMapping"] = True
+    base_folder["fsPath"] = "/home"
+    Folder().save(base_folder)
 
-    events.bind("rest.post.file.before", name, create_file)
-    events.bind("rest.put.file/:id.before", name, rename_file)
-    events.bind("rest.delete.file/:id.before", name, remove_file)
+    events.bind("rest.get.item.before", info["name"], get_child_items)
+    events.bind("rest.post.item.before", info["name"], create_item)
+    events.bind("rest.get.item/:id.before", info["name"], get_item_info)
+    events.bind("rest.put.item/:id.before", info["name"], rename_item)
+    events.bind("rest.delete.item/:id.before", info["name"], remove_item)
+    events.bind("rest.post.item/:id/copy.before", info["name"], copy_item)
+    events.bind("rest.get.item/:id/download.before", info["name"], file_download)
+    events.bind("rest.get.item/:id/files.before", info["name"], get_child_files)
+    # PUT/DELETE /item/:id/metadata
+    events.bind("rest.get.item/:id/rootpath.before", info["name"], item_root_path)
 
-    events.bind("rest.get.file/:id/download.before", name, file_download)
-    events.bind("rest.post.file/chunk.before", name, read_chunk)
+    events.bind("rest.post.file.before", info["name"], create_file)
+    # GET /file/:id
+    events.bind("rest.put.file/:id.before", info["name"], rename_file)
+    events.bind("rest.delete.file/:id.before", info["name"], remove_file)
+    # PUT /file/:id/contents
+    # POST /file/:id/copy
+    events.bind("rest.get.file/:id/download.before", info["name"], file_download)
+    # GET /file/:id/download/:name
+    # PUT /file/:id/move
+    events.bind("rest.post.file/chunk.before", info["name"], read_chunk)
+    # POST /file/completion
+    # GET /file/offset
+    # DELETE /file/upload/:id
 
-    events.bind("rest.get.folder.before", name, get_child_folders)
-    events.bind("rest.put.folder/:id.before", name, rename_folder)
-    events.bind("rest.post.folder.before", name, create_folder)
-    events.bind("rest.get.folder/:id.before", name, get_folder_info)
-    events.bind("rest.get.folder/:id/rootpath.before", name, folder_root_path)
-    events.bind("rest.get.folder/:id/details.before", name, get_folder_details)
+    events.bind("rest.get.folder.before", info["name"], get_child_folders)
+    events.bind("rest.post.folder.before", info["name"], create_folder)
+    events.bind("rest.get.folder/:id.before", info["name"], get_folder_info)
+    events.bind("rest.put.folder/:id.before", info["name"], rename_folder)
+    # DELETE /folder/:id
+    # GET /folder/:id/access
+    # PUT /folder/:id/access
+    # PUT /folder/:id/check
+    # DELETE /folder/:id/contents
+    # POST /folder/:id/copy
+    events.bind("rest.get.folder/:id/details.before", info["name"], get_folder_details)
+    # GET /folder/:id/download
+    # PUT/DELETE /folder/:id/metadata
+    events.bind("rest.get.folder/:id/rootpath.before", info["name"], folder_root_path)
 
-    events.bind("rest.delete.resource.before", name, delete_resources)
-    events.bind("rest.post.resource/copy.before", name, copy_resources)
-    events.bind("rest.put.resource/move.before", name, move_resources)
+    events.bind("rest.delete.resource.before", info["name"], delete_resources)
+    # GET /resource/:id
+    # GET /resource/:id/path
+    # PUT /resource/:id/timestamp
+    events.bind("rest.post.resource/copy.before", info["name"], copy_resources)
+    # GET /resource/:id/download
+    # GET /resource/lookup
+    events.bind("rest.put.resource/move.before", info["name"], move_resources)
+    # GET /resource/search
+
+    events.bind("rest.post.folder.after", info["name"], mapping_folder_update)
+    events.bind("rest.put.folder/:id.after", info["name"], mapping_folder_update)
+
+    Folder().exposeFields(level=AccessType.READ, fields={"isMapping"})
+    Folder().exposeFields(level=AccessType.SITE_ADMIN, fields={"fsPath"})
+    for endpoint in (FolderResource.updateFolder, FolderResource.createFolder):
+        (
+            endpoint.description.param(
+                "isMapping",
+                "Whether this is a virtual folder.",
+                required=False,
+                dataType="boolean",
+            ).param("fsPath", "Local filesystem path it maps to.", required=False)
+        )
