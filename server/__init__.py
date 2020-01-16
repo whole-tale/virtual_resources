@@ -25,6 +25,7 @@ from girder.exceptions import (
 from girder.models.assetstore import Assetstore
 from girder.models.collection import Collection
 from girder.models.folder import Folder
+from girder.models.item import Item
 from girder.models.upload import Upload
 from girder.utility import RequestBodyStream, assetstore_utilities
 from girder.utility.progress import ProgressContext
@@ -37,28 +38,31 @@ BASE_FOLDER = None
 LOCAL_ROOT = "/tmp"
 
 
-def _generate_id(path):
+def _generate_id(path, root_id):
     if isinstance(path, pathlib.Path):
         path = path.as_posix()
+    path += "|" + str(root_id)
     return "wtlocal:" + base64.b64encode(path.encode()).decode()
 
 
 def path_from_id(object_id):
-    return pathlib.Path(base64.b64decode(object_id[8:]).decode())
+    decoded = base64.b64decode(object_id[8:]).decode()
+    path, root_id = decoded.split("|")
+    return pathlib.Path(path), root_id
 
 
-def _Folder(path):
+def _Folder(path, root_id):
     if not path.is_dir():
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
     stat = path.stat()
     return {
-        "_id": _generate_id(path.as_posix()),
+        "_id": _generate_id(path.as_posix(), root_id),
         "_modelType": "folder",
         "_accessLevel": AccessType.ADMIN,
         "name": path.parts[-1],
-        "parentId": _generate_id(path.parent.as_posix()),
+        "parentId": _generate_id(path.parent.as_posix(), root_id),
         "created": datetime.datetime.fromtimestamp(stat.st_ctime),
         "updated": datetime.datetime.fromtimestamp(stat.st_mtime),
         "size": stat.st_size,
@@ -67,18 +71,18 @@ def _Folder(path):
     }
 
 
-def _Item(path):
+def _Item(path, root_id):
     if not path.is_file():
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
     stat = path.stat()
     return {
-        "_id": _generate_id(path.as_posix()),
+        "_id": _generate_id(path.as_posix(), root_id),
         "_modelType": "item",
         "_accessLevel": AccessType.ADMIN,
         "name": path.parts[-1],
-        "folderId": _generate_id(path.parent.as_posix()),
+        "folderId": _generate_id(path.parent.as_posix(), root_id),
         "created": datetime.datetime.fromtimestamp(stat.st_ctime),
         "updated": datetime.datetime.fromtimestamp(stat.st_mtime),
         "size": stat.st_size,
@@ -86,21 +90,21 @@ def _Item(path):
     }
 
 
-def _File(path):
+def _File(path, root_id):
     if not path.is_file():
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
     stat = path.stat()
     return {
-        "_id": _generate_id(path.as_posix()),
+        "_id": _generate_id(path.as_posix(), root_id),
         "_modelType": "file",
         "name": path.parts[-1],
         "size": stat.st_size,
         "exts": [],
         "creatorId": "user_id",
         "created": datetime.datetime.fromtimestamp(stat.st_ctime),
-        "itemId": _generate_id(path.as_posix()),
+        "itemId": _generate_id(path.as_posix(), root_id),
     }
 
 
@@ -122,56 +126,62 @@ def validate_event(func):
 
         path = None
         if obj_id.startswith("wtlocal:"):
-            path = base64.b64decode(obj_id[8:]).decode()
+            path, root_id = path_from_id(obj_id)
         elif parent_id.startswith("wtlocal:"):
-            path = base64.b64decode(parent_id[8:]).decode()
+            path, root_id = path_from_id(parent_id)
         elif parent_id in virtual_folders:  # root
             root_folder = Folder().load(parent_id, force=True)
             path = root_folder["fsPath"]
+            root_id = str(root_folder["_id"])
 
         if path:
             path = pathlib.Path(path)
             if path.is_absolute():
-                func(self, event, path)
+                func(self, event, path, root_id)
 
     return wrapper
 
 
 @boundHandler
 @validate_event
-def get_folder_info(self, event, path):
-    event.preventDefault().addResponse(_Folder(path))
+def get_folder_info(self, event, path, root_id):
+    event.preventDefault().addResponse(_Folder(path, root_id))
 
 
 @boundHandler
 @validate_event
-def get_item_info(self, event, path):
-    event.preventDefault().addResponse(_Item(path))
+def get_item_info(self, event, path, root_id):
+    event.preventDefault().addResponse(_Item(path, root_id))
 
 
 @boundHandler
 @validate_event
-def get_child_items(self, event, path):
-    response = [_Item(obj) for obj in path.iterdir() if obj.is_file()]
+def get_child_items(self, event, path, root_id):
+    response = [_Item(obj, root_id) for obj in path.iterdir() if obj.is_file()]
     event.preventDefault().addResponse(sorted(response, key=itemgetter("name")))
 
 
 @boundHandler
 @validate_event
-def get_child_folders(self, event, path):
-    response = [_Folder(obj) for obj in path.iterdir() if obj.is_dir()]
+def get_child_folders(self, event, path, root_id):
+    response = [_Folder(obj, root_id) for obj in path.iterdir() if obj.is_dir()]
     event.preventDefault().addResponse(sorted(response, key=itemgetter("name")))
 
 
 @boundHandler
 @validate_event
-def folder_root_path(self, event, path):
-    response = [dict(type="folder", object=_Folder(path))]
+def folder_root_path(self, event, path, root_id):
+    user = self.getCurrentUser()
+    root_folder = Folder().load(root_id, force=True)
+    root_path = pathlib.Path(root_folder["fsPath"])
+
+    response = [dict(type="folder", object=_Folder(path, root_id))]
     path = path.parent
-    while path != pathlib.Path("/"):
-        response.append(dict(type="folder", object=_Folder(path)))
+    while path != root_path:
+        response.append(dict(type="folder", object=_Folder(path, root_id)))
         path = path.parent
 
+    response.append(dict(type="folder", object=Folder().filter(root_folder, user)))
     response.append(dict(type="collection", object=BASE_COLLECTION))
     response.pop(0)
     event.preventDefault().addResponse(response[::-1])
@@ -179,13 +189,20 @@ def folder_root_path(self, event, path):
 
 @boundHandler
 @validate_event
-def item_root_path(self, event, path):
-    response = [dict(type="item", object=_Item(path))]
+def item_root_path(self, event, path, root_id):
+    user = self.getCurrentUser()
+    root_folder = Folder().load(root_id, force=True)
+    root_path = pathlib.Path(root_folder["fsPath"])
+
+    response = [dict(type="item", object=Item().filter(_Item(path, root_id), user))]
     path = path.parent
-    while path != pathlib.Path("/"):
-        response.append(dict(type="folder", object=_Folder(path)))
+    while path != root_path:
+        response.append(
+            dict(type="folder", object=Folder().filter(_Folder(path, root_id), user))
+        )
         path = path.parent
 
+    response.append(dict(type="folder", object=Folder().filter(root_folder, user)))
     response.append(dict(type="collection", object=BASE_COLLECTION))
     response.pop(0)
     event.preventDefault().addResponse(response[::-1])
@@ -193,16 +210,16 @@ def item_root_path(self, event, path):
 
 @boundHandler
 @validate_event
-def get_child_files(self, event, path):
-    event.preventDefault().addResponse([_File(path)])
+def get_child_files(self, event, path, root_id):
+    event.preventDefault().addResponse([_File(path, root_id)])
 
 
 @boundHandler
 @validate_event
-def get_folder_details(self, event, path):
+def get_folder_details(self, event, path, root_id):
     if not (path.exists() and path.is_dir()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
     response = dict(nFolders=0, nItems=0)
@@ -216,13 +233,13 @@ def get_folder_details(self, event, path):
 
 @boundHandler
 @validate_event
-def file_download(self, event, path):
+def file_download(self, event, path, root_id):
     if not (path.exists() and path.is_file()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
-    fobj = _File(path)
+    fobj = _File(path, root_id)
 
     endByte = max(int(event.info["params"].get("endByte", fobj["size"])), fobj["size"])
     offset = int(event.info["params"].get("offset", "0"))
@@ -264,68 +281,68 @@ def file_download(self, event, path):
 
 @boundHandler
 @validate_event
-def create_folder(self, event, path):
+def create_folder(self, event, path, root_id):
     params = event.info["params"]
     new_path = path / params["name"]
     new_path.mkdir()
-    event.preventDefault().addResponse(_Folder(new_path))
+    event.preventDefault().addResponse(_Folder(new_path, root_id))
 
 
 @boundHandler
 @validate_event
-def create_item(self, event, path):
+def create_item(self, event, path, root_id):
     params = event.info["params"]
     new_path = path / params["name"]
     with open(new_path, "a"):
         os.utime(new_path.as_posix())
-    event.preventDefault().addResponse(_Item(new_path))
+    event.preventDefault().addResponse(_Item(new_path, root_id))
 
 
 @boundHandler
 @validate_event
-def rename_item(self, event, path):
+def rename_item(self, event, path, root_id):
     if not (path.exists() and path.is_file()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
     new_path = path.with_name(event.info["params"]["name"])
     path.rename(new_path)
-    event.preventDefault().addResponse(_Item(new_path))
+    event.preventDefault().addResponse(_Item(new_path, root_id))
 
 
 @boundHandler
 @validate_event
-def rename_file(self, event, path):
+def rename_file(self, event, path, root_id):
     if not (path.exists() and path.is_file()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
     new_path = path.with_name(event.info["params"]["name"])
     path.rename(new_path)
-    event.preventDefault().addResponse(_File(new_path))
+    event.preventDefault().addResponse(_File(new_path, root_id))
 
 
 @boundHandler
 @validate_event
-def rename_folder(self, event, path):
+def rename_folder(self, event, path, root_id):
     if not (path.exists() and path.is_dir()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
     new_path = path.with_name(event.info["params"]["name"])
     path.rename(new_path)
-    event.preventDefault().addResponse(_Folder(new_path))
+    event.preventDefault().addResponse(_Folder(new_path, root_id))
 
 
 @boundHandler
 @validate_event
-def remove_item(self, event, path):
+def remove_item(self, event, path, root_id):
     if not (path.exists() and path.is_file()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
     path.unlink()
@@ -334,10 +351,10 @@ def remove_item(self, event, path):
 
 @boundHandler
 @validate_event
-def remove_file(self, event, path):
+def remove_file(self, event, path, root_id):
     if not (path.exists() and path.is_file()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
     path.unlink()
@@ -346,29 +363,31 @@ def remove_file(self, event, path):
 
 @boundHandler
 @validate_event
-def copy_item(self, event, path):
+def copy_item(self, event, path, root_id):
     # TODO: folderId is not passed properly, but that's vanilla girder's fault...
     if not (path.exists() and path.is_file()):
         raise ValidationException(
-            "Invalid ObjectId: %s" % _generate_id(path), field="id"
+            "Invalid ObjectId: %s" % _generate_id(path, root_id), field="id"
         )
 
     name = event.info["params"].get("name") or path.name
-    new_path = path_from_id(event.info["params"]["folderId"]) / name
+    path, root_id = path_from_id(event.info["params"]["folderId"])
+    new_path = path / name
     shutil.copy(path.as_posix(), new_path.as_posix())
-    event.preventDefault().addResponse(_Item(new_path))
+    event.preventDefault().addResponse(_Item(new_path, root_id))
 
 
 def _finalize_upload(upload, assetstore=None):
     if assetstore is None:
         assetstore = Assetstore().load(upload["assetstoreId"])
-    abspath = path_from_id(upload["parentId"]) / upload["name"]
+    path, root_id = path_from_id(upload["parentId"])
+    abspath = path / upload["name"]
     shutil.move(upload["tempFile"], abspath.as_posix())
     try:
         os.chmod(abspath, assetstore.get("perms", DEFAULT_PERMS))
     except OSError:
         pass
-    return _File(abspath)
+    return _File(abspath, root_id)
 
 
 def _handle_chunk(upload, chunk, filter=False, user=None):
@@ -388,17 +407,17 @@ def _handle_chunk(upload, chunk, filter=False, user=None):
 
 @boundHandler
 @validate_event
-def create_file(self, event, path):
+def create_file(self, event, path, root_id):
     user = self.getCurrentUser()
     params = event.info["params"]
     if not (path.exists() and path.is_dir()):
         raise ValidationException(
-            "Invalid Folder Id in create_file: {}".format(_generate_id(path)),
+            "Invalid Folder Id in create_file: {}".format(_generate_id(path, root_id)),
             field="id",
         )
 
     name = params["name"]
-    parent = _Folder(path)
+    parent = _Folder(path, root_id)
     file_path = path / name
     with open(file_path, "a"):
         os.utime(file_path.as_posix())
@@ -432,7 +451,7 @@ def create_file(self, event, path):
             return
         event.preventDefault().addResponse(upload)
     else:
-        event.preventDefault().addResponse(_File(file_path))
+        event.preventDefault().addResponse(_File(file_path, root_id))
 
 
 @boundHandler
@@ -473,7 +492,7 @@ def read_chunk(self, event):
 
 @boundHandler
 @validate_event
-def move_resources(self, event, path):
+def move_resources(self, event, path, root_id):
     user = self.getCurrentUser()
     resources = json.loads(event.info["params"]["resources"])
     progress = event.info["params"]["progress"]
@@ -487,7 +506,7 @@ def move_resources(self, event, path):
     ) as ctx:
         for kind in resources:
             for obj_id in resources[kind]:
-                source_path = path_from_id(obj_id)
+                source_path, root_id = path_from_id(obj_id)
                 ctx.update(message="Moving %s %s" % (kind, source_path.name))
                 shutil.move(
                     source_path.as_posix(), (path / source_path.name).as_posix()
@@ -498,7 +517,7 @@ def move_resources(self, event, path):
 
 @boundHandler
 @validate_event
-def copy_resources(self, event, path):
+def copy_resources(self, event, path, root_id):
     user = self.getCurrentUser()
     resources = json.loads(event.info["params"]["resources"])
     progress = event.info["params"]["progress"]
@@ -512,7 +531,7 @@ def copy_resources(self, event, path):
     ) as ctx:
         for kind in resources:
             for obj_id in resources[kind]:
-                source_path = path_from_id(obj_id)
+                source_path, root_id = path_from_id(obj_id)
                 ctx.update(message="Copying %s %s" % (kind, source_path.name))
                 if kind == "folder":
                     shutil.copytree(
@@ -527,7 +546,7 @@ def copy_resources(self, event, path):
 
 
 @boundHandler
-def delete_resources(self, event):
+def delete_resources(self, event, root_id):
     user = self.getCurrentUser()
     resources = json.loads(event.info["params"]["resources"])
     remaining_resources = dict(folder=[], item=[])
@@ -550,7 +569,7 @@ def delete_resources(self, event):
     ) as ctx:
         for kind in wt_resources:
             for obj_id in wt_resources[kind]:
-                source_path = path_from_id(obj_id)
+                source_path, root_id = path_from_id(obj_id)
                 ctx.update(message="Deleting %s %s" % (kind, source_path.name))
                 if kind == "folder":
                     shutil.rmtree(source_path.as_posix())
