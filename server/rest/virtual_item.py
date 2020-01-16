@@ -6,6 +6,8 @@ from operator import itemgetter
 import shutil
 
 from girder import events
+from girder.api import access
+from girder.constants import TokenScope
 from girder.exceptions import ValidationException
 from girder.models.folder import Folder
 from girder.models.item import Item
@@ -30,11 +32,13 @@ class VirtualItem(VirtualObject):
         # PUT/DELETE /item/:id/metadata
         events.bind("rest.get.item/:id/rootpath.before", name, self.item_root_path)
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def get_child_items(self, event, path, root_id):
         response = [self.vItem(obj, root_id) for obj in path.iterdir() if obj.is_file()]
         event.preventDefault().addResponse(sorted(response, key=itemgetter("name")))
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def create_item(self, event, path, root_id):
         params = event.info["params"]
@@ -43,10 +47,12 @@ class VirtualItem(VirtualObject):
             os.utime(new_path.as_posix())
         event.preventDefault().addResponse(self.vItem(new_path, root_id))
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def get_item_info(self, event, path, root_id):
         event.preventDefault().addResponse(self.vItem(path, root_id))
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def rename_item(self, event, path, root_id):
         if not (path.exists() and path.is_file()):
@@ -58,6 +64,7 @@ class VirtualItem(VirtualObject):
         path.rename(new_path)
         event.preventDefault().addResponse(self.vItem(new_path, root_id))
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def remove_item(self, event, path, root_id):
         if not (path.exists() and path.is_file()):
@@ -68,6 +75,7 @@ class VirtualItem(VirtualObject):
         path.unlink()
         event.preventDefault().addResponse({"message": "Deleted item %s." % path.name})
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def copy_item(self, event, path, root_id):
         # TODO: folderId is not passed properly, but that's vanilla girder's fault...
@@ -82,10 +90,12 @@ class VirtualItem(VirtualObject):
         shutil.copy(path.as_posix(), new_path.as_posix())
         event.preventDefault().addResponse(self.vItem(new_path, root_id))
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def get_child_files(self, event, path, root_id):
         event.preventDefault().addResponse([self.vFile(path, root_id)])
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def item_root_path(self, event, path, root_id):
         user = self.getCurrentUser()

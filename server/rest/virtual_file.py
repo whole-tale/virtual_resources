@@ -7,7 +7,9 @@ import shutil
 import stat
 
 from girder import events
+from girder.api import access
 from girder.api.rest import setResponseHeader
+from girder.constants import TokenScope
 from girder.exceptions import (
     GirderException,
     AccessException,
@@ -44,6 +46,7 @@ class VirtualFile(VirtualObject):
         # GET /file/offset
         # DELETE /file/upload/:id
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def create_file(self, event, path, root_id):
         user = self.getCurrentUser()
@@ -88,6 +91,7 @@ class VirtualFile(VirtualObject):
         else:
             event.preventDefault().addResponse(self.vFile(file_path, root_id))
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def rename_file(self, event, path, root_id):
         self.is_file(path, root_id)
@@ -95,12 +99,15 @@ class VirtualFile(VirtualObject):
         path.rename(new_path)
         event.preventDefault().addResponse(self.vFile(new_path, root_id))
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def remove_file(self, event, path, root_id):
         self.is_file(path, root_id)
         path.unlink()
         event.preventDefault().addResponse({"message": "Deleted file %s." % path.name})
 
+    @access.cookie
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def file_download(self, event, path, root_id):
         fobj = self.vFile(path, root_id)
@@ -170,6 +177,7 @@ class VirtualFile(VirtualObject):
         else:
             return upload
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     def read_chunk(self, event):
         params = event.info["params"]
         if "chunk" in params:

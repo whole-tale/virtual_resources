@@ -4,6 +4,8 @@ import json
 import shutil
 
 from girder import events
+from girder.api import access
+from girder.constants import TokenScope
 from girder.utility.progress import ProgressContext
 
 from . import VirtualObject, validate_event
@@ -25,6 +27,7 @@ class VirtualResource(VirtualObject):
         events.bind("rest.put.resource/move.before", name, self.move_resources)
         # GET /resource/search
 
+    @access.user(scope=TokenScope.DATA_OWN)
     def delete_resources(self, event, root_id):
         user = self.getCurrentUser()
         resources = json.loads(event.info["params"]["resources"])
@@ -60,6 +63,7 @@ class VirtualResource(VirtualObject):
         if total == 0:
             event.preventDefault().addResponse(None)
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def copy_resources(self, event, path, root_id):
         user = self.getCurrentUser()
@@ -88,6 +92,7 @@ class VirtualResource(VirtualObject):
                     ctx.update(increment=1)
         event.preventDefault().addResponse(None)
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def move_resources(self, event, path, root_id):
         user = self.getCurrentUser()

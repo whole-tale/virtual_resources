@@ -4,6 +4,8 @@ import pathlib
 from operator import itemgetter
 
 from girder import events
+from girder.api import access
+from girder.constants import TokenScope
 from girder.exceptions import ValidationException
 from girder.models.folder import Folder
 
@@ -30,13 +32,18 @@ class VirtualFolder(VirtualObject):
         # PUT/DELETE /folder/:id/metadata
         events.bind("rest.get.folder/:id/rootpath.before", name, self.folder_root_path)
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def get_child_folders(self, event, path, root_id):
+        user = self.getCurrentUser()
         response = [
-            self.vFolder(obj, root_id) for obj in path.iterdir() if obj.is_dir()
+            Folder().filter(self.vFolder(obj, root_id), user=user)
+            for obj in path.iterdir()
+            if obj.is_dir()
         ]
         event.preventDefault().addResponse(sorted(response, key=itemgetter("name")))
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def create_folder(self, event, path, root_id):
         params = event.info["params"]
@@ -44,10 +51,12 @@ class VirtualFolder(VirtualObject):
         new_path.mkdir()
         event.preventDefault().addResponse(self.vFolder(new_path, root_id))
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def get_folder_info(self, event, path, root_id):
         event.preventDefault().addResponse(self.vFolder(path, root_id))
 
+    @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event
     def rename_folder(self, event, path, root_id):
         if not (path.exists() and path.is_dir()):
@@ -59,6 +68,7 @@ class VirtualFolder(VirtualObject):
         path.rename(new_path)
         event.preventDefault().addResponse(self.vFolder(new_path, root_id))
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def get_folder_details(self, event, path, root_id):
         if not (path.exists() and path.is_dir()):
@@ -74,6 +84,7 @@ class VirtualFolder(VirtualObject):
                 response["nItems"] += 1
         event.preventDefault().addResponse(response)
 
+    @access.public(scope=TokenScope.DATA_READ)
     @validate_event
     def folder_root_path(self, event, path, root_id):
         user = self.getCurrentUser()
