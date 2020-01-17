@@ -5,7 +5,7 @@ import shutil
 
 from girder import events
 from girder.api import access
-from girder.constants import TokenScope
+from girder.constants import AccessType, TokenScope
 from girder.utility.progress import ProgressContext
 
 from . import VirtualObject, validate_event
@@ -28,8 +28,8 @@ class VirtualResource(VirtualObject):
         # GET /resource/search
 
     @access.user(scope=TokenScope.DATA_OWN)
-    def delete_resources(self, event, root_id):
-        user = self.getCurrentUser()
+    @validate_event(level=AccessType.WRITE)
+    def delete_resources(self, event, root, user=None):
         resources = json.loads(event.info["params"]["resources"])
         remaining_resources = dict(folder=[], item=[])
         wt_resources = dict(folder=[], item=[])
@@ -64,8 +64,8 @@ class VirtualResource(VirtualObject):
             event.preventDefault().addResponse(None)
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def copy_resources(self, event, path, root_id):
+    @validate_event(level=AccessType.WRITE)
+    def copy_resources(self, event, path, root, user=None):
         user = self.getCurrentUser()
         resources = json.loads(event.info["params"]["resources"])
         progress = event.info["params"]["progress"]
@@ -93,9 +93,8 @@ class VirtualResource(VirtualObject):
         event.preventDefault().addResponse(None)
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def move_resources(self, event, path, root_id):
-        user = self.getCurrentUser()
+    @validate_event(level=AccessType.WRITE)
+    def move_resources(self, event, path, root, user=None):
         resources = json.loads(event.info["params"]["resources"])
         progress = event.info["params"]["progress"]
         total = sum([len(resources[key]) for key in resources])

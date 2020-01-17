@@ -7,8 +7,9 @@ import shutil
 
 from girder import events
 from girder.api import access
-from girder.constants import TokenScope
+from girder.constants import TokenScope, AccessType
 from girder.exceptions import ValidationException
+from girder.models.file import File
 from girder.models.folder import Folder
 from girder.models.item import Item
 
@@ -33,92 +34,93 @@ class VirtualItem(VirtualObject):
         events.bind("rest.get.item/:id/rootpath.before", name, self.item_root_path)
 
     @access.public(scope=TokenScope.DATA_READ)
-    @validate_event
-    def get_child_items(self, event, path, root_id):
-        response = [self.vItem(obj, root_id) for obj in path.iterdir() if obj.is_file()]
+    @validate_event(level=AccessType.READ)
+    def get_child_items(self, event, path, root, user=None):
+        response = [
+            Item().filter(self.vItem(obj, root), user=user)
+            for obj in path.iterdir()
+            if obj.is_file()
+        ]
         event.preventDefault().addResponse(sorted(response, key=itemgetter("name")))
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def create_item(self, event, path, root_id):
+    @validate_event(level=AccessType.WRITE)
+    def create_item(self, event, path, root, user=None):
         params = event.info["params"]
         new_path = path / params["name"]
         with open(new_path, "a"):
             os.utime(new_path.as_posix())
-        event.preventDefault().addResponse(self.vItem(new_path, root_id))
+        event.preventDefault().addResponse(
+            Item().filter(self.vItem(new_path, root), user=user)
+        )
 
     @access.public(scope=TokenScope.DATA_READ)
-    @validate_event
-    def get_item_info(self, event, path, root_id):
-        event.preventDefault().addResponse(self.vItem(path, root_id))
+    @validate_event(level=AccessType.READ)
+    def get_item_info(self, event, path, root, user=None):
+        event.preventDefault().addResponse(
+            Item().filter(self.vItem(path, root), user=user)
+        )
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def rename_item(self, event, path, root_id):
-        if not (path.exists() and path.is_file()):
-            raise ValidationException(
-                "Invalid ObjectId: %s" % self.generate_id(path, root_id), field="id"
-            )
-
+    @validate_event(level=AccessType.WRITE)
+    def rename_item(self, event, path, root, user=None):
+        self.is_file(path, root["_id"])
         new_path = path.with_name(event.info["params"]["name"])
         path.rename(new_path)
-        event.preventDefault().addResponse(self.vItem(new_path, root_id))
+        event.preventDefault().addResponse(
+            Item().filter(self.vItem(new_path, root), user=user)
+        )
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def remove_item(self, event, path, root_id):
-        if not (path.exists() and path.is_file()):
-            raise ValidationException(
-                "Invalid ObjectId: %s" % self.generate_id(path, root_id), field="id"
-            )
-
+    @validate_event(level=AccessType.WRITE)
+    def remove_item(self, event, path, root, user=None):
+        self.is_file(path, root["_id"])
         path.unlink()
         event.preventDefault().addResponse({"message": "Deleted item %s." % path.name})
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def copy_item(self, event, path, root_id):
+    @validate_event(level=AccessType.WRITE)
+    def copy_item(self, event, path, root, user=None):
         # TODO: folderId is not passed properly, but that's vanilla girder's fault...
-        if not (path.exists() and path.is_file()):
-            raise ValidationException(
-                "Invalid ObjectId: %s" % self.generate_id(path, root_id), field="id"
-            )
-
-        name = event.info["params"].get("name") or path.name
-        path, root_id = self.path_from_id(event.info["params"]["folderId"])
+        self.is_file(path, root["_id"])
+        name = event.info["params"].get("name") or path.name  # TODO: cross origin?
+        path, new_root_id = self.path_from_id(event.info["params"]["folderId"])
+        if str(new_root_id) != str(root["_id"]):
+            new_root = Folder().load(new_root_id, user=user, level=AccessType.WRITE)
+        else:
+            new_root = root
         new_path = path / name
         shutil.copy(path.as_posix(), new_path.as_posix())
-        event.preventDefault().addResponse(self.vItem(new_path, root_id))
+        event.preventDefault().addResponse(
+            Item().filter(self.vItem(new_path, new_root), user=user)
+        )
 
     @access.public(scope=TokenScope.DATA_READ)
-    @validate_event
-    def get_child_files(self, event, path, root_id):
-        event.preventDefault().addResponse([self.vFile(path, root_id)])
+    @validate_event(level=AccessType.READ)
+    def get_child_files(self, event, path, root, user=None):
+        event.preventDefault().addResponse(
+            [File().filter(self.vFile(path, root), user=user)]
+        )
 
     @access.public(scope=TokenScope.DATA_READ)
-    @validate_event
-    def item_root_path(self, event, path, root_id):
-        user = self.getCurrentUser()
-        root_folder = Folder().load(root_id, force=True)
-        root_path = pathlib.Path(root_folder["fsPath"])
-
+    @validate_event(level=AccessType.READ)
+    def item_root_path(self, event, path, root, user=None):
+        root_path = pathlib.Path(root["fsPath"])
         response = [
-            dict(type="item", object=Item().filter(self.vItem(path, root_id), user))
+            dict(type="item", object=Item().filter(self.vItem(path, root), user=user))
         ]
         path = path.parent
         while path != root_path:
             response.append(
                 dict(
                     type="folder",
-                    object=Folder().filter(self.vFolder(path, root_id), user),
+                    object=Folder().filter(self.vFolder(path, root), user=user),
                 )
             )
             path = path.parent
 
-        response.append(dict(type="folder", object=Folder().filter(root_folder, user)))
-        girder_rootpath = Folder().parentsToRoot(
-            root_folder, user=self.getCurrentUser()
-        )
+        response.append(dict(type="folder", object=Folder().filter(root, user=user)))
+        girder_rootpath = Folder().parentsToRoot(root, user=user)
         response += girder_rootpath[::-1]
         response.pop(0)
         event.preventDefault().addResponse(response[::-1])

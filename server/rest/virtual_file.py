@@ -9,13 +9,11 @@ import stat
 from girder import events
 from girder.api import access
 from girder.api.rest import setResponseHeader
-from girder.constants import TokenScope
-from girder.exceptions import (
-    GirderException,
-    AccessException,
-    RestException,
-)
+from girder.constants import AccessType, TokenScope
+from girder.exceptions import GirderException, AccessException, RestException
 from girder.models.assetstore import Assetstore
+from girder.models.file import File
+from girder.models.folder import Folder
 from girder.models.upload import Upload
 from girder.utility import RequestBodyStream, assetstore_utilities
 
@@ -47,14 +45,13 @@ class VirtualFile(VirtualObject):
         # DELETE /file/upload/:id
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def create_file(self, event, path, root_id):
-        user = self.getCurrentUser()
+    @validate_event(level=AccessType.WRITE)
+    def create_file(self, event, path, root, user=None):
         params = event.info["params"]
-        self.is_dir(path, root_id)
+        self.is_dir(path, root["_id"])
 
         name = params["name"]
-        parent = self.vFolder(path, root_id)
+        parent = Folder().filter(self.vFolder(path, root), user=user)
         file_path = path / name
         with open(file_path, "a"):
             os.utime(file_path.as_posix())
@@ -89,28 +86,32 @@ class VirtualFile(VirtualObject):
                 return
             event.preventDefault().addResponse(upload)
         else:
-            event.preventDefault().addResponse(self.vFile(file_path, root_id))
+            event.preventDefault().addResponse(
+                File().filter(self.vFile(file_path, root), user=user)
+            )
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def rename_file(self, event, path, root_id):
-        self.is_file(path, root_id)
+    @validate_event(level=AccessType.WRITE)
+    def rename_file(self, event, path, root, user=None):
+        self.is_file(path, root["_id"])
         new_path = path.with_name(event.info["params"]["name"])
         path.rename(new_path)
-        event.preventDefault().addResponse(self.vFile(new_path, root_id))
+        event.preventDefault().addResponse(
+            File().filter(self.vFile(new_path, root), user=user)
+        )
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event
-    def remove_file(self, event, path, root_id):
-        self.is_file(path, root_id)
+    @validate_event(level=AccessType.WRITE)
+    def remove_file(self, event, path, root, user=None):
+        self.is_file(path, root["_id"])
         path.unlink()
         event.preventDefault().addResponse({"message": "Deleted file %s." % path.name})
 
     @access.cookie
     @access.public(scope=TokenScope.DATA_READ)
-    @validate_event
-    def file_download(self, event, path, root_id):
-        fobj = self.vFile(path, root_id)
+    @validate_event(level=AccessType.READ)
+    def file_download(self, event, path, root, user=None):
+        fobj = self.vFile(path, root["_id"])
 
         endByte = max(
             int(event.info["params"].get("endByte", fobj["size"])), fobj["size"]
