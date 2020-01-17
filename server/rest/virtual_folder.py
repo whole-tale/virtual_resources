@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import pathlib
 from operator import itemgetter
+import shutil
 
 from girder import events
 from girder.api import access
@@ -20,7 +21,7 @@ class VirtualFolder(VirtualObject):
         events.bind("rest.post.folder.before", name, self.create_folder)
         events.bind("rest.get.folder/:id.before", name, self.get_folder_info)
         events.bind("rest.put.folder/:id.before", name, self.rename_folder)
-        # DELETE /folder/:id
+        events.bind("rest.delete.folder/:id.before", name, self.remove_folder)
         # GET /folder/:id/access
         # PUT /folder/:id/access
         # PUT /folder/:id/check
@@ -66,6 +67,15 @@ class VirtualFolder(VirtualObject):
         path.rename(new_path)
         event.preventDefault().addResponse(
             Folder().filter(self.vFolder(new_path, root), user=user)
+        )
+
+    @access.user(scope=TokenScope.DATA_WRITE)
+    @validate_event(level=AccessType.WRITE)
+    def remove_folder(self, event, path, root, user=None):
+        self.is_dir(path, root["_id"])
+        shutil.rmtree(path.as_posix())
+        event.preventDefault().addResponse(
+            {"message": "Deleted folder %s." % path.name}
         )
 
     @access.public(scope=TokenScope.DATA_READ)
