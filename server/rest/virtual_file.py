@@ -54,7 +54,7 @@ class VirtualFile(VirtualObject):
         parent = Folder().filter(self.vFolder(path, root), user=user)
         file_path = path / name
         try:
-            with open(file_path, "a"):
+            with file_path.open(mode="a"):
                 os.utime(file_path.as_posix())
         except PermissionError:
             raise GirderException(
@@ -147,7 +147,7 @@ class VirtualFile(VirtualObject):
 
         def stream():
             bytesRead = offset
-            with open(path, "rb") as f:
+            with path.open(mode="rb") as f:
                 if offset > 0:
                     f.seek(offset)
 
@@ -171,7 +171,7 @@ class VirtualFile(VirtualObject):
         path, root_id = self.path_from_id(upload["parentId"])
         abspath = path / upload["name"]
         shutil.move(upload["tempFile"], abspath.as_posix())
-        os.chmod(abspath, assetstore.get("perms", DEFAULT_PERMS))
+        abspath.chmod(assetstore.get("perms", DEFAULT_PERMS))
         root = Folder().load(root_id, force=True)  # TODO make it obsolete
         return self.vFile(abspath, root)
 

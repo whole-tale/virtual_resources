@@ -48,7 +48,7 @@ class VirtualItem(VirtualObject):
     def create_item(self, event, path, root, user=None):
         params = event.info["params"]
         new_path = path / params["name"]
-        with open(new_path, "a"):
+        with new_path.open(mode="a"):
             os.utime(new_path.as_posix())
         event.preventDefault().addResponse(
             Item().filter(self.vItem(new_path, root), user=user)
