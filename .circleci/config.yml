@@ -9,9 +9,10 @@ jobs:
       - run:
           name: Installing Plugin Dependencies
           command: |
+            apt-get update -qqy
+            apt-get install -y sudo
             rm -rf /girder/plugins/virtual_resources
-            ln -s /root/project /girder/plugins/virtual_resources
-            # set -o pipefail; pip install --upgrade --force-reinstall -r requirements.txt -r requirements-dev.txt | cat
+            cp -r /root/project /girder/plugins/virtual_resources
       - run:
           name: Install Test Dependencies
           environment:
@@ -26,6 +27,8 @@ jobs:
             cp /tmp/girder/CMakeLists.txt /girder/
             cp /tmp/girder/.coveragerc /girder/
             cp -r /tmp/girder/tests /girder/
+            mkdir /girder/build
+            chown -R girder:girder /girder
       - run:
           name: Running Tests
           environment:
@@ -35,9 +38,9 @@ jobs:
             - VIRTUALENV_EXECUTABLE: "/usr/local/bin/virtualenv"
             - PYTHON_EXECUTABLE: "/usr/bin/python3"
             - TEST_GROUP: "python"
+            - HOME: "/home/girder"
           command: |
-            mkdir /girder/build
-            ctest -VV -S /girder/plugins/virtual_resources/cmake/circle_continuous.cmake
+            sudo -E -u girder ctest -VV -S /girder/plugins/virtual_resources/cmake/circle_continuous.cmake
       - run:
           name: Install Codecov client
           command: pip install codecov
@@ -47,4 +50,3 @@ jobs:
       - run:
           name: Uploading Coverage Results
           command: codecov
-
