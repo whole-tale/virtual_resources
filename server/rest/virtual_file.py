@@ -31,7 +31,7 @@ class VirtualFile(VirtualObject):
         name = "virtual_resources"
 
         events.bind("rest.post.file.before", name, self.create_file)
-        # GET /file/:id
+        events.bind("rest.get.file/:id.before", name, self.get_file_info)
         events.bind("rest.put.file/:id.before", name, self.rename_file)
         events.bind("rest.delete.file/:id.before", name, self.remove_file)
         # PUT /file/:id/contents
@@ -53,8 +53,16 @@ class VirtualFile(VirtualObject):
         name = params["name"]
         parent = Folder().filter(self.vFolder(path, root), user=user)
         file_path = path / name
-        with open(file_path, "a"):
-            os.utime(file_path.as_posix())
+        try:
+            with open(file_path, "a"):
+                os.utime(file_path.as_posix())
+        except PermissionError:
+            raise GirderException(
+                "Insufficient perms to write on {}".format(path.as_posix()),
+                "girder.api.v1.file.create-upload-failed",
+            )
+        except Exception:
+            raise
 
         size = int(params["size"])
         chunk = None
@@ -67,17 +75,9 @@ class VirtualFile(VirtualObject):
                 chunk = RequestBodyStream(cherrypy.request.body)
         if chunk is not None and chunk.getSize() <= 0:
             chunk = None
-        try:
-            upload = Upload().createUpload(
-                user=user, name=name, parentType="folder", parent=parent, size=size
-            )
-        except OSError as exc:
-            if exc.errno == errno.EACCES:
-                raise GirderException(
-                    "Failed to create upload.",
-                    "girder.api.v1.file.create-upload-failed",
-                )
-            raise
+        upload = Upload().createUpload(
+            user=user, name=name, parentType="folder", parent=parent, size=size
+        )
 
         if upload["size"] > 0:
             if chunk:
@@ -89,6 +89,13 @@ class VirtualFile(VirtualObject):
             event.preventDefault().addResponse(
                 File().filter(self.vFile(file_path, root), user=user)
             )
+
+    @access.public(scope=TokenScope.DATA_READ)
+    @validate_event(level=AccessType.READ)
+    def get_file_info(self, event, path, root, user=None):
+        event.preventDefault().addResponse(
+            File().filter(self.vFile(path, root), user=user)
+        )
 
     @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event(level=AccessType.WRITE)
@@ -111,13 +118,22 @@ class VirtualFile(VirtualObject):
     @access.public(scope=TokenScope.DATA_READ)
     @validate_event(level=AccessType.READ)
     def file_download(self, event, path, root, user=None):
-        fobj = self.vFile(path, root["_id"])
+        fobj = self.vFile(path, root)
 
-        endByte = max(
-            int(event.info["params"].get("endByte", fobj["size"])), fobj["size"]
+        rangeHeader = cherrypy.lib.httputil.get_ranges(
+            cherrypy.request.headers.get("Range"), fobj.get("size", 0)
         )
-        offset = int(event.info["params"].get("offset", "0"))
+        # The HTTP Range header takes precedence over query params
+        if rangeHeader and len(rangeHeader):
+            # Currently we only support a single range.
+            offset, endByte = rangeHeader[0]
+        else:
+            endByte = min(
+                int(event.info["params"].get("endByte", fobj["size"])), fobj["size"]
+            )
+            offset = int(event.info["params"].get("offset", "0"))
 
+        setResponseHeader("Accept-Ranges", "bytes")
         setResponseHeader("Content-Type", "application/octet-stream")
         setResponseHeader("Content-Length", max(endByte - offset, 0))
         if (offset or endByte < fobj["size"]) and fobj["size"]:
@@ -125,12 +141,9 @@ class VirtualFile(VirtualObject):
                 "Content-Range", "bytes %d-%d/%d" % (offset, endByte - 1, fobj["size"])
             )
         disp = event.info["params"].get("contentDisposition", "attachment")
-        if disp == "inline":
-            setResponseHeader("Content-Disposition", "inline")
-        else:
-            setResponseHeader(
-                "Content-Disposition", 'attachment; filename="%s"' % fobj["name"]
-            )
+        setResponseHeader(
+            "Content-Disposition", '{}; filename="{}"'.format(disp, fobj["name"])
+        )
 
         def stream():
             bytesRead = offset
@@ -158,11 +171,9 @@ class VirtualFile(VirtualObject):
         path, root_id = self.path_from_id(upload["parentId"])
         abspath = path / upload["name"]
         shutil.move(upload["tempFile"], abspath.as_posix())
-        try:
-            os.chmod(abspath, assetstore.get("perms", DEFAULT_PERMS))
-        except OSError:
-            pass
-        return self.vFile(abspath, root_id)
+        os.chmod(abspath, assetstore.get("perms", DEFAULT_PERMS))
+        root = Folder().load(root_id, force=True)  # TODO make it obsolete
+        return self.vFile(abspath, root)
 
     def _handle_chunk(self, upload, chunk, filter=False, user=None):
         assetstore = Assetstore().load(upload["assetstoreId"])

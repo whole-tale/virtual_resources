@@ -19,7 +19,6 @@ def validate_event(level=AccessType.READ):
                 params.get("parentId") or params.get("folderId") or params.get("itemId")
             )
             path = None
-
             if event.info.get("id"):
                 obj_id = event.info["id"]
                 if obj_id.startswith("wtlocal:"):
@@ -28,7 +27,7 @@ def validate_event(level=AccessType.READ):
                     root_folder = Folder().load(obj_id, force=True) or {}
                     path = root_folder.get("fsPath")  # only exists on virtual folders
                     root_id = str(root_folder.get("_id"))
-            elif parent_id.startswith("wtlocal:"):
+            elif parent_id and parent_id.startswith("wtlocal:"):
                 path, root_id = VirtualObject.path_from_id(parent_id)
             elif parent_id and params.get("parentType") == "folder":
                 root_folder = Folder().load(parent_id, force=True) or {}
@@ -108,16 +107,18 @@ class VirtualObject(Resource):
             "lowerName": path.parts[-1].lower(),
         }
 
-    def _File(self, path, root):
+    def vFile(self, path, root):
         self.is_file(path, root["_id"])
         stat = path.stat()
         return {
             "_id": self.generate_id(path.as_posix(), root["_id"]),
             "_modelType": "file",
-            "creatorId": None,
+            "assetstoreId": None,
+            "creatorId": root["creatorId"],
+            "mimeType": "application/octet-stream",
             "name": path.parts[-1],
             "size": stat.st_size,
-            "exts": [],
+            "exts": [_[1:] for _ in path.suffixes],
             "created": datetime.datetime.fromtimestamp(stat.st_ctime),
             "itemId": self.generate_id(path.as_posix(), root["_id"]),
         }

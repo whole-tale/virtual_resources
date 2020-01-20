@@ -8,7 +8,7 @@ import shutil
 from girder import events
 from girder.api import access
 from girder.constants import TokenScope, AccessType
-from girder.exceptions import ValidationException
+from girder.exceptions import GirderException
 from girder.models.file import File
 from girder.models.folder import Folder
 from girder.models.item import Item
@@ -81,15 +81,28 @@ class VirtualItem(VirtualObject):
     @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event(level=AccessType.WRITE)
     def copy_item(self, event, path, root, user=None):
-        # TODO: folderId is not passed properly, but that's vanilla girder's fault...
         self.is_file(path, root["_id"])
-        name = event.info["params"].get("name") or path.name  # TODO: cross origin?
-        path, new_root_id = self.path_from_id(event.info["params"]["folderId"])
-        if str(new_root_id) != str(root["_id"]):
-            new_root = Folder().load(new_root_id, user=user, level=AccessType.WRITE)
+        name = event.info["params"].get("name") or path.name
+
+        folder_id = event.info["params"].get("folderId", root["_id"])
+        if str(folder_id).startswith("wtlocal:"):
+            new_dirname, new_root_id = self.path_from_id(folder_id)
+        else:
+            new_root = Folder().load(folder_id, force=True, exc=True)
+            try:
+                new_dirname = pathlib.Path(new_root["fsPath"])
+            except KeyError:
+                raise GirderException("Folder {} is not a mapping.".format(folder_id))
+            new_root_id = str(new_root["_id"])
+
+        if new_root_id != str(root["_id"]):
+            new_root = Folder().load(
+                new_root["_id"], user=user, level=AccessType.WRITE, exc=True
+            )  # Check ACLs
         else:
             new_root = root
-        new_path = path / name
+
+        new_path = new_dirname / name
         shutil.copy(path.as_posix(), new_path.as_posix())
         event.preventDefault().addResponse(
             Item().filter(self.vItem(new_path, new_root), user=user)
