@@ -94,14 +94,8 @@ class VirtualFolder(VirtualObject):
     @validate_event(level=AccessType.READ)
     def folder_root_path(self, event, path, root, user=None):
         root_path = pathlib.Path(root["fsPath"])
-        response = [
-            dict(
-                type="folder",
-                object=Folder().filter(self.vFolder(path, root), user=user),
-            )
-        ]
-        path = path.parent
-        while path != root_path:
+        response = []
+        if root_path != path:
             response.append(
                 dict(
                     type="folder",
@@ -109,6 +103,14 @@ class VirtualFolder(VirtualObject):
                 )
             )
             path = path.parent
+            while path != root_path:
+                response.append(
+                    dict(
+                        type="folder",
+                        object=Folder().filter(self.vFolder(path, root), user=user),
+                    )
+                )
+                path = path.parent
 
         response.append(dict(type="folder", object=Folder().filter(root, user=user)))
         girder_rootpath = Folder().parentsToRoot(root, user=self.getCurrentUser())
