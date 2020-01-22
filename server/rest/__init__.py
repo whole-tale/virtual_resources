@@ -15,22 +15,26 @@ def validate_event(level=AccessType.READ):
     def validation(func):
         def wrapper(self, event):
             params = event.info.get("params", {})
-            parent_id = (
-                params.get("parentId") or params.get("folderId") or params.get("itemId")
-            )
+            obj_id = event.info.get("id")
+            parent_id = params.get("parentId")
+            folder_id = params.get("folderId")
+            item_id = params.get("itemId")
+            any_parent_id = parent_id or folder_id or item_id
+
             path = None
-            if event.info.get("id"):
-                obj_id = event.info["id"]
+            if obj_id:
                 if obj_id.startswith("wtlocal:"):
                     path, root_id = VirtualObject.path_from_id(obj_id)
                 else:
                     root_folder = Folder().load(obj_id, force=True) or {}
                     path = root_folder.get("fsPath")  # only exists on virtual folders
                     root_id = str(root_folder.get("_id"))
-            elif parent_id and parent_id.startswith("wtlocal:"):
-                path, root_id = VirtualObject.path_from_id(parent_id)
-            elif parent_id and params.get("parentType") == "folder":
-                root_folder = Folder().load(parent_id, force=True) or {}
+
+            elif any_parent_id and any_parent_id.startswith("wtlocal:"):
+                path, root_id = VirtualObject.path_from_id(any_parent_id)
+
+            elif (parent_id and params.get("parentType") == "folder") or folder_id:
+                root_folder = Folder().load(parent_id or folder_id, force=True) or {}
                 path = root_folder.get("fsPath")  # only exists on virtual folders
                 root_id = str(root_folder.get("_id"))
 
