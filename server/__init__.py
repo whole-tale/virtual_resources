@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import pathlib
+
 from girder import events
 from girder.api.v1.folder import Folder as FolderResource
 from girder.api.rest import boundHandler
@@ -31,6 +33,9 @@ def mapping_folder_update(self, event):
                 self.getCurrentUser(), "Must be admin to setup virtual folders."
             )
             folder = Folder().filter(Folder().save(folder), self.getCurrentUser())
+            pathlib.Path(folder["fsPath"]).mkdir(
+                mode=0o755, parents=True, exist_ok=True
+            )
             event.preventDefault().addResponse(folder)
 
 
