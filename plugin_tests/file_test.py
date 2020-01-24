@@ -397,6 +397,20 @@ class FileOperationsTestCase(base.TestCase):
             params={
                 "parentType": "folder",
                 "parentId": self.private_folder["_id"],
+                "name": "empty_file.txt",
+                "size": 0,
+                "mimeType": "text/plain",
+            },
+        )
+        self.assertStatusOk(resp)
+
+        resp = self.request(
+            path="/file",
+            method="POST",
+            user=self.users["sally"],
+            params={
+                "parentType": "folder",
+                "parentId": self.private_folder["_id"],
                 "name": "blah_file.txt",
                 "size": len(chunk1),
                 "mimeType": "text/plain",
