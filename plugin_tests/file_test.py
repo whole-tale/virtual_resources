@@ -397,12 +397,30 @@ class FileOperationsTestCase(base.TestCase):
             params={
                 "parentType": "folder",
                 "parentId": self.private_folder["_id"],
-                "name": "empty_file.txt",
-                "size": "0",
+                "name": "blah_file.txt",
+                "size": len(chunk1),
                 "mimeType": "text/plain",
             },
         )
         self.assertStatusOk(resp)
+        upload = resp.json
+
+        (dest_dir / "blah_file.txt").unlink()
+        dest_dir.chmod(0o551)
+        resp = self.request(
+            path="/file/chunk",
+            method="POST",
+            user=self.users["sally"],
+            params={"uploadId": upload["_id"], "offset": 0},
+            type="text/plain",
+            body=chunk1,
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(
+            resp.json["message"], "Exception: Exception('Failed to store upload.',)",
+        )
+        dest_dir.chmod(0o775)
 
         resp = self.request(
             path="/file",

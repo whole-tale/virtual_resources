@@ -183,10 +183,17 @@ class ResourceOperationsTestCase(base.TestCase):
         self.assertTrue(moved_file2.is_file())
 
         # DELETE
+        regular_folder = Folder().createFolder(
+            self.base_collection,
+            "public",
+            parentType="collection",
+            public=True,
+            reuseExisting=True,
+        )
         with file1.open(mode="wb") as fp:  # Recreate
             fp.write(file1_contents)
 
-        resources = {"item": [], "folder": []}
+        resources = {"item": [], "folder": [str(regular_folder["_id"])]}
         for path in root_path.iterdir():
             if path.is_dir():
                 key = "folder"
@@ -204,6 +211,8 @@ class ResourceOperationsTestCase(base.TestCase):
         )
         self.assertStatusOk(resp)
         self.assertEqual(len(list(root_path.iterdir())), 0)
+        regular_folder = Folder().load(regular_folder["_id"], force=True)
+        self.assertTrue(regular_folder is None)
 
     def test_resource_op_acls(self):
         from girder.plugins.virtual_resources.rest import VirtualObject
@@ -216,14 +225,14 @@ class ResourceOperationsTestCase(base.TestCase):
         file1_contents = b"Blah Blah Blah"
         with file1.open(mode="wb") as fp:
             fp.write(file1_contents)
-        
+
         sallys_root_path = pathlib.Path(self.private_folder["fsPath"])
         # MOVE
         move_target_dir = sallys_root_path / "moved"
         move_target_dir.mkdir()
         resources = {
             "item": [
-                VirtualObject.generate_id(file1.as_posix(), self.public_folder["_id"]),
+                VirtualObject.generate_id(file1.as_posix(), self.public_folder["_id"])
             ],
             "folder": [
                 VirtualObject.generate_id(
@@ -248,7 +257,7 @@ class ResourceOperationsTestCase(base.TestCase):
         self.assertTrue(nested_dir.exists())
         self.assertTrue(file1.exists())
         self.assertEqual(len(list(move_target_dir.iterdir())), 0)
-       
+
         # COPY cors
         resp = self.request(
             path="/resource/copy",
