@@ -145,7 +145,7 @@ class VirtualFolder(VirtualObject):
 
             zip_stream = ziputil.ZipGenerator(rootPath="")
             for obj in recursive_file_list(path):
-                zip_path = os.path.relpath(obj, path)
+                zip_path = os.path.relpath(obj.as_posix(), path.as_posix())
                 for data in zip_stream.addFile(lambda: file_stream(obj), zip_path):
                     yield data
             yield zip_stream.footer()
