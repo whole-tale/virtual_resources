@@ -1,15 +1,38 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import os
 import pathlib
 from operator import itemgetter
 import shutil
 
 from girder import events
 from girder.api import access
+from girder.api.rest import setResponseHeader, setContentDisposition
 from girder.constants import TokenScope, AccessType
 from girder.models.folder import Folder
+from girder.utility import ziputil
 
 from . import VirtualObject, validate_event
+
+
+def file_stream(path, offset=0, buf_size=65536):
+    bytes_read = offset
+    end_byte = path.stat().st_size
+    with path.open(mode="rb") as f:
+        if offset > 0:
+            f.seek(offset)
+
+        while True:
+            read_len = min(buf_size, end_byte - bytes_read)
+            if read_len <= 0:
+                break
+
+            data = f.read(read_len)
+            bytes_read += read_len
+
+            if not data:
+                break
+            yield data
 
 
 class VirtualFolder(VirtualObject):
@@ -30,7 +53,7 @@ class VirtualFolder(VirtualObject):
         )
         # POST /folder/:id/copy
         events.bind("rest.get.folder/:id/details.before", name, self.get_folder_details)
-        # GET /folder/:id/download
+        events.bind("rest.get.folder/:id/download.before", name, self.download_folder)
         # PUT/DELETE /folder/:id/metadata -- not needed
         events.bind("rest.get.folder/:id/rootpath.before", name, self.folder_root_path)
 
@@ -104,6 +127,30 @@ class VirtualFolder(VirtualObject):
             elif obj.is_file():
                 response["nItems"] += 1
         event.preventDefault().addResponse(response)
+
+    @access.public(scope=TokenScope.DATA_READ)
+    @validate_event(level=AccessType.READ)
+    def download_folder(self, event, path, root, user=None):
+        self.is_dir(path, root["_id"])
+        setResponseHeader("Content-Type", "application/zip")
+        setContentDisposition(path.name + ".zip")
+
+        def stream():
+            def recursive_file_list(p):
+                for obj in p.iterdir():
+                    if obj.is_file():
+                        yield obj
+                    elif obj.is_dir():
+                        yield from recursive_file_list(obj)
+
+            zip_stream = ziputil.ZipGenerator(rootPath="")
+            for obj in recursive_file_list(path):
+                zip_path = os.path.relpath(obj, path)
+                for data in zip_stream.addFile(lambda: file_stream(obj), zip_path):
+                    yield data
+            yield zip_stream.footer()
+
+        event.preventDefault().addResponse(stream)
 
     @access.public(scope=TokenScope.DATA_READ)
     @validate_event(level=AccessType.READ)

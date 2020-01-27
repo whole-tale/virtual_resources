@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+import io
 import pathlib
 import shutil
 import tempfile
+import zipfile
 
 from tests import base
 
@@ -191,10 +192,10 @@ class FolderOperationsTestCase(base.TestCase):
         dir1.mkdir()
         file1 = dir1 / "some_file.txt"
         with file1.open(mode="wb") as fp:
-            fp.write(b"\n")
+            fp.write(b"file1\n")
         file2 = nested_dir / "other_file.txt"
         with file2.open(mode="wb") as fp:
-            fp.write(b"\n")
+            fp.write(b"file2\n")
         self.assertEqual(len(list(nested_dir.iterdir())), 2)
 
         resp = self.request(
@@ -205,6 +206,37 @@ class FolderOperationsTestCase(base.TestCase):
         self.assertStatusOk(resp)
         self.assertEqual(len(list(nested_dir.iterdir())), 0)
         nested_dir.rmdir()
+
+    def test_folder_download(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        nested_dir = root_path / "lone_survivor"
+        nested_dir.mkdir(parents=True)
+        folder_id = VirtualObject.generate_id(nested_dir, self.public_folder["_id"])
+
+        dir1 = nested_dir / "subfolder"
+        dir1.mkdir()
+        file1 = dir1 / "some_file.txt"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"file1\n")
+        file2 = nested_dir / "other_file.txt"
+        with file2.open(mode="wb") as fp:
+            fp.write(b"file2\n")
+        self.assertEqual(len(list(nested_dir.iterdir())), 2)
+
+        resp = self.request(
+            path="/folder/{}/download".format(folder_id),
+            method="GET",
+            user=self.users["admin"],
+            isJson=False,
+        )
+        self.assertStatusOk(resp)
+        with zipfile.ZipFile(io.BytesIO(self.getBody(resp, text=False)), "r") as fp:
+            self.assertEqual(
+                sorted(fp.namelist()), ["other_file.txt", "subfolder/some_file.txt"]
+            )
+            # TODO should probably check the content too...
 
     def tearDown(self):
         Folder().remove(self.public_folder)
