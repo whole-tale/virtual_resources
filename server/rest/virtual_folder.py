@@ -22,14 +22,16 @@ class VirtualFolder(VirtualObject):
         events.bind("rest.get.folder/:id.before", name, self.get_folder_info)
         events.bind("rest.put.folder/:id.before", name, self.rename_folder)
         events.bind("rest.delete.folder/:id.before", name, self.remove_folder)
-        # GET /folder/:id/access
-        # PUT /folder/:id/access
-        # PUT /folder/:id/check
-        # DELETE /folder/:id/contents
+        # GET /folder/:id/access -- not needed
+        # PUT /folder/:id/access -- not needed
+        # PUT /folder/:id/check -- not needed
+        events.bind(
+            "rest.delete.folder/:id/contents.before", name, self.remove_folder_contents
+        )
         # POST /folder/:id/copy
         events.bind("rest.get.folder/:id/details.before", name, self.get_folder_details)
         # GET /folder/:id/download
-        # PUT/DELETE /folder/:id/metadata
+        # PUT/DELETE /folder/:id/metadata -- not needed
         events.bind("rest.get.folder/:id/rootpath.before", name, self.folder_root_path)
 
     @access.public(scope=TokenScope.DATA_READ)
@@ -76,6 +78,19 @@ class VirtualFolder(VirtualObject):
         shutil.rmtree(path.as_posix())
         event.preventDefault().addResponse(
             {"message": "Deleted folder %s." % path.name}
+        )
+
+    @access.user(scope=TokenScope.DATA_WRITE)
+    @validate_event(level=AccessType.WRITE)
+    def remove_folder_contents(self, event, path, root, user=None):
+        self.is_dir(path, root["_id"])
+        for sub_path in path.iterdir():
+            if sub_path.is_file():
+                sub_path.unlink()
+            elif sub_path.is_dir():
+                shutil.rmtree(sub_path.as_posix())
+        event.preventDefault().addResponse(
+            {"message": "Deleted contents of folder %s." % path.name}
         )
 
     @access.public(scope=TokenScope.DATA_READ)

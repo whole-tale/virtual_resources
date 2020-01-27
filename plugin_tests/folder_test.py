@@ -179,6 +179,33 @@ class FolderOperationsTestCase(base.TestCase):
 
         shutil.rmtree((root_path / "level0").as_posix())
 
+    def test_folder_delete_contents(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        nested_dir = root_path / "lone_survivor"
+        nested_dir.mkdir(parents=True)
+        folder_id = VirtualObject.generate_id(nested_dir, self.public_folder["_id"])
+
+        dir1 = nested_dir / "subfolder"
+        dir1.mkdir()
+        file1 = dir1 / "some_file.txt"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"\n")
+        file2 = nested_dir / "other_file.txt"
+        with file2.open(mode="wb") as fp:
+            fp.write(b"\n")
+        self.assertEqual(len(list(nested_dir.iterdir())), 2)
+
+        resp = self.request(
+            path="/folder/{}/contents".format(folder_id),
+            method="DELETE",
+            user=self.users["admin"],
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(list(nested_dir.iterdir())), 0)
+        nested_dir.rmdir()
+
     def tearDown(self):
         Folder().remove(self.public_folder)
         Collection().remove(self.base_collection)
