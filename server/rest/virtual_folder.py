@@ -15,21 +15,16 @@ from girder.utility import ziputil
 from . import VirtualObject, validate_event
 
 
-def file_stream(path, offset=0, buf_size=65536):
-    bytes_read = offset
+def file_stream(path, buf_size=65536):
+    bytes_read = 0
     end_byte = path.stat().st_size
     with path.open(mode="rb") as f:
-        if offset > 0:
-            f.seek(offset)
-
         while True:
             read_len = min(buf_size, end_byte - bytes_read)
             if read_len <= 0:
                 break
-
             data = f.read(read_len)
             bytes_read += read_len
-
             if not data:
                 break
             yield data
