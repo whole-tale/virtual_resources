@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+import io
 import pathlib
 import shutil
 import tempfile
+import zipfile
 
 from tests import base
 
@@ -70,6 +71,15 @@ class FolderOperationsTestCase(base.TestCase):
         )
         self.public_folder.update(dict(fsPath=self.public_root, isMapping=True))
         self.public_folder = Folder().save(self.public_folder)
+
+        self.regular_folder = Folder().createFolder(
+            self.base_collection,
+            "regular",
+            creator=self.users["sally"],
+            parentType="collection",
+            public=True,
+            reuseExisting=True,
+        )
 
     def test_basic_folder_ops(self):
         from girder.plugins.virtual_resources.rest import VirtualObject
@@ -178,6 +188,162 @@ class FolderOperationsTestCase(base.TestCase):
         self.assertEqual(rootpath[3]["object"]["name"], "level1")
 
         shutil.rmtree((root_path / "level0").as_posix())
+
+    def test_folder_delete_contents(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        nested_dir = root_path / "lone_survivor"
+        nested_dir.mkdir(parents=True)
+        folder_id = VirtualObject.generate_id(nested_dir, self.public_folder["_id"])
+
+        dir1 = nested_dir / "subfolder"
+        dir1.mkdir()
+        file1 = dir1 / "some_file.txt"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"file1\n")
+        file2 = nested_dir / "other_file.txt"
+        with file2.open(mode="wb") as fp:
+            fp.write(b"file2\n")
+        self.assertEqual(len(list(nested_dir.iterdir())), 2)
+
+        resp = self.request(
+            path="/folder/{}/contents".format(folder_id),
+            method="DELETE",
+            user=self.users["admin"],
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(list(nested_dir.iterdir())), 0)
+        nested_dir.rmdir()
+
+    def test_folder_download(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        nested_dir = root_path / "lone_survivor"
+        nested_dir.mkdir(parents=True)
+        folder_id = VirtualObject.generate_id(nested_dir, self.public_folder["_id"])
+
+        dir1 = nested_dir / "subfolder"
+        dir1.mkdir()
+        file1 = dir1 / "some_file.txt"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"file1\n")
+        file2 = nested_dir / "other_file.txt"
+        with file2.open(mode="wb") as fp:
+            fp.write(b"file2\n")
+        self.assertEqual(len(list(nested_dir.iterdir())), 2)
+
+        resp = self.request(
+            path="/folder/{}/download".format(folder_id),
+            method="GET",
+            user=self.users["admin"],
+            isJson=False,
+        )
+        self.assertStatusOk(resp)
+        with zipfile.ZipFile(io.BytesIO(self.getBody(resp, text=False)), "r") as fp:
+            self.assertEqual(
+                sorted(fp.namelist()), ["other_file.txt", "subfolder/some_file.txt"]
+            )
+            # TODO should probably check the content too...
+
+    def test_folder_copy(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        dir1 = root_path / "source_folder"
+        dir1.mkdir(parents=True)
+        folder_id = VirtualObject.generate_id(dir1, self.public_folder["_id"])
+        file1 = dir1 / "file.dat"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"file1\n")
+
+        resp = self.request(
+            path="/folder/{}/copy".format(self.public_folder["_id"]),
+            method="POST",
+            user=self.users["sally"],
+            params={"name": "new_copy"},
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(resp.json["message"], "Copying mappings is not allowed.")
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["joel"],
+            params={
+                "name": "new_copy",
+                "parentId": str(self.regular_folder["_id"]),
+                "parentType": "folder",
+            },
+        )
+        self.assertStatus(resp, 403)
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["sally"],
+            params={
+                "name": "new_copy",
+                "parentId": str(self.regular_folder["_id"]),
+                "parentType": "folder",
+            },
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(
+            resp.json["message"],
+            "Folder {} is not a mapping.".format(self.regular_folder["_id"]),
+        )
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["sally"],
+            params={},
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(
+            resp.json["message"],
+            "Folder '{}' already exists at {}".format(dir1.name, dir1),
+        )
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["sally"],
+            params={"name": "new_copy"},
+        )
+        self.assertStatus(resp, 403)
+        self.assertFalse((dir1.with_name("new_copy") / file1.name).is_file())
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["admin"],
+            params={"name": "new_copy"},
+        )
+        self.assertStatusOk(resp)
+        new_folder = resp.json
+        self.assertEqual(new_folder["name"], "new_copy")
+        self.assertTrue((dir1.with_name("new_copy") / file1.name).is_file())
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["admin"],
+            params={
+                "name": "copy_within_copy",
+                "parentId": new_folder["_id"],
+                "parentType": "folder",
+            },
+        )
+        self.assertStatusOk(resp)
+        self.assertTrue(
+            (dir1.with_name("new_copy") / "copy_within_copy" / file1.name).is_file()
+        )
 
     def tearDown(self):
         Folder().remove(self.public_folder)

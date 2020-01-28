@@ -80,14 +80,24 @@ class VirtualObject(Resource):
             )
 
     def vFolder(self, path, root):
+        if path.as_posix() == root["fsPath"]:
+            return root
+
         self.is_dir(path, root["_id"])
         stat = path.stat()
+
+        if path.parent.as_posix() == root["fsPath"]:
+            parentId = root["_id"]
+        else:
+            parentId = self.generate_id(path.parent.as_posix(), root["_id"])
+
         return {
             "_id": self.generate_id(path.as_posix(), root["_id"]),
             "_modelType": "folder",
             "access": copy.deepcopy(root.get("access", {"users": [], "groups": []})),
             "name": path.parts[-1],
-            "parentId": self.generate_id(path.parent.as_posix(), root["_id"]),
+            "parentId": parentId,
+            "parentCollection": "folder",
             "creatorId": None,
             "created": datetime.datetime.fromtimestamp(stat.st_ctime),
             "updated": datetime.datetime.fromtimestamp(stat.st_mtime),
