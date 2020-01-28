@@ -37,6 +37,7 @@ class VirtualFile(VirtualObject):
         events.bind("rest.delete.file/:id.before", name, self.remove_file)
         # PUT /file/:id/contents
         # POST /file/:id/copy
+        events.bind("rest.get.item/:id/download.before", name, self.file_download)
         events.bind("rest.get.file/:id/download.before", name, self.file_download)
         # GET /file/:id/download/:name
         # PUT /file/:id/move
