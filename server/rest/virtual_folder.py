@@ -26,8 +26,8 @@ def file_stream(path, buf_size=65536):
                 break
             data = f.read(read_len)
             bytes_read += read_len
-            if not data:
-                break
+            # if not data:
+            #    break
             yield data
 
 

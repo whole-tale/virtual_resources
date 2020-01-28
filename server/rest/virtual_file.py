@@ -159,8 +159,8 @@ class VirtualFile(VirtualObject):
                     data = f.read(readLen)
                     bytesRead += readLen
 
-                    if not data:
-                        break
+                    # if not data:
+                    #    break
                     yield data
 
         event.preventDefault().addResponse(stream)
