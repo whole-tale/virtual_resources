@@ -10,6 +10,7 @@ from girder import events
 from girder.api import access
 from girder.api.rest import setResponseHeader, setContentDisposition
 from girder.constants import TokenScope, AccessType
+from girder.exceptions import GirderException
 from girder.models.folder import Folder
 from girder.utility import ziputil
 
@@ -47,7 +48,7 @@ class VirtualFolder(VirtualObject):
         events.bind(
             "rest.delete.folder/:id/contents.before", name, self.remove_folder_contents
         )
-        # POST /folder/:id/copy
+        events.bind("rest.post.folder/:id/copy.before", name, self.copy_folder)
         events.bind("rest.get.folder/:id/details.before", name, self.get_folder_details)
         events.bind("rest.get.folder/:id/download.before", name, self.download_folder)
         # PUT/DELETE /folder/:id/metadata -- not needed
@@ -115,6 +116,44 @@ class VirtualFolder(VirtualObject):
                 shutil.rmtree(sub_path.as_posix())
         event.preventDefault().addResponse(
             {"message": "Deleted contents of folder %s." % path.name}
+        )
+
+    @access.public(scope=TokenScope.DATA_READ)
+    @validate_event(level=AccessType.READ)
+    def copy_folder(self, event, path, root, user=None):
+        self.is_dir(path, root["_id"])
+        source = self.vFolder(path, root)
+
+        if not str(source["_id"]).startswith("wtlocal:"):
+            raise GirderException("Copying mappings is not allowed.")
+
+        params = event.info.get("params", {})
+        name = params.get("name", path.name)
+        parentId = params.get("parentId", source["parentId"])
+
+        if parentId == source["parentId"] and name == path.name:
+            raise GirderException(
+                "Folder '{}' already exists at {}".format(name, path.as_posix())
+            )
+        if str(parentId).startswith("wtlocal:"):
+            dst_path, dst_root_id = self.path_from_id(parentId)
+            dst_root = Folder().load(
+                dst_root_id, user=user, level=AccessType.WRITE, exc=True
+            )
+        else:
+            dst_root = Folder().load(
+                parentId, user=user, level=AccessType.WRITE, exc=True
+            )
+            try:
+                dst_path = pathlib.Path(dst_root["fsPath"])
+            except KeyError:
+                raise GirderException(
+                    "Folder {} is not a mapping.".format(dst_root["_id"])
+                )
+
+        shutil.copytree(path.as_posix(), (dst_path / name).as_posix())
+        event.preventDefault().addResponse(
+            Folder().filter(self.vFolder(dst_path / name, dst_root), user=user)
         )
 
     @access.public(scope=TokenScope.DATA_READ)

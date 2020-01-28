@@ -346,6 +346,8 @@ class FileOperationsTestCase(base.TestCase):
         return file
 
     def test_upload_odd_cases(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject as vo
+
         # Change dest perms to ro
         dest_dir = pathlib.Path(self.private_folder["fsPath"])
         dest_dir.chmod(0o551)
@@ -454,6 +456,29 @@ class FileOperationsTestCase(base.TestCase):
         fobj = resp.json
         self.assertEqual(fobj["size"], len(chunk1))
         self.assertEqual(fobj["_modelType"], "file")
+
+        dest_dir = pathlib.Path(self.private_folder["fsPath"]) / "some_dir"
+        dest_dir.mkdir()
+        resp = self.request(
+            path="/file",
+            method="POST",
+            user=self.users["sally"],
+            params={
+                "parentType": "folder",
+                "parentId": vo.generate_id(
+                    dest_dir.as_posix(), self.private_folder["_id"]
+                ),
+                "name": "full_body.txt",
+                "size": len(chunk1),
+                "mimeType": "text/plain",
+            },
+            type="text/plain",
+            body=chunk1,
+        )
+        self.assertStatusOk(resp)
+        fobj = resp.json
+        self.assertEqual(fobj["size"], len(chunk1))
+        self.assertTrue((dest_dir / fobj["name"]).is_file())
 
     def testFilesystemAssetstore(self):
         """

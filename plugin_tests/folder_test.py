@@ -72,6 +72,15 @@ class FolderOperationsTestCase(base.TestCase):
         self.public_folder.update(dict(fsPath=self.public_root, isMapping=True))
         self.public_folder = Folder().save(self.public_folder)
 
+        self.regular_folder = Folder().createFolder(
+            self.base_collection,
+            "regular",
+            creator=self.users["sally"],
+            parentType="collection",
+            public=True,
+            reuseExisting=True,
+        )
+
     def test_basic_folder_ops(self):
         from girder.plugins.virtual_resources.rest import VirtualObject
 
@@ -237,6 +246,104 @@ class FolderOperationsTestCase(base.TestCase):
                 sorted(fp.namelist()), ["other_file.txt", "subfolder/some_file.txt"]
             )
             # TODO should probably check the content too...
+
+    def test_folder_copy(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        dir1 = root_path / "source_folder"
+        dir1.mkdir(parents=True)
+        folder_id = VirtualObject.generate_id(dir1, self.public_folder["_id"])
+        file1 = dir1 / "file.dat"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"file1\n")
+
+        resp = self.request(
+            path="/folder/{}/copy".format(self.public_folder["_id"]),
+            method="POST",
+            user=self.users["sally"],
+            params={"name": "new_copy"},
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(resp.json["message"], "Copying mappings is not allowed.")
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["joel"],
+            params={
+                "name": "new_copy",
+                "parentId": str(self.regular_folder["_id"]),
+                "parentType": "folder",
+            },
+        )
+        self.assertStatus(resp, 403)
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["sally"],
+            params={
+                "name": "new_copy",
+                "parentId": str(self.regular_folder["_id"]),
+                "parentType": "folder",
+            },
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(
+            resp.json["message"],
+            "Folder {} is not a mapping.".format(self.regular_folder["_id"]),
+        )
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["sally"],
+            params={},
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(
+            resp.json["message"],
+            "Folder '{}' already exists at {}".format(dir1.name, dir1),
+        )
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["sally"],
+            params={"name": "new_copy"},
+        )
+        self.assertStatus(resp, 403)
+        self.assertFalse((dir1.with_name("new_copy") / file1.name).is_file())
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["admin"],
+            params={"name": "new_copy"},
+        )
+        self.assertStatusOk(resp)
+        new_folder = resp.json
+        self.assertEqual(new_folder["name"], "new_copy")
+        self.assertTrue((dir1.with_name("new_copy") / file1.name).is_file())
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["admin"],
+            params={
+                "name": "copy_within_copy",
+                "parentId": new_folder["_id"],
+                "parentType": "folder",
+            },
+        )
+        self.assertStatusOk(resp)
+        self.assertTrue(
+            (dir1.with_name("new_copy") / "copy_within_copy" / file1.name).is_file()
+        )
 
     def tearDown(self):
         Folder().remove(self.public_folder)

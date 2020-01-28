@@ -3,6 +3,7 @@
 import cherrypy
 import errno
 import os
+import pathlib
 import shutil
 import stat
 
@@ -168,11 +169,15 @@ class VirtualFile(VirtualObject):
     def _finalize_upload(self, upload, assetstore=None):
         if assetstore is None:
             assetstore = Assetstore().load(upload["assetstoreId"])
-        path, root_id = self.path_from_id(upload["parentId"])
+        if str(upload["parentId"]).startswith("wtlocal:"):
+            path, root_id = self.path_from_id(upload["parentId"])
+            root = Folder().load(root_id, force=True)  # TODO make it obsolete
+        else:
+            root = Folder().load(upload["parentId"], force=True)
+            path = pathlib.Path(root["fsPath"])
         abspath = path / upload["name"]
         shutil.move(upload["tempFile"], abspath.as_posix())
         abspath.chmod(assetstore.get("perms", DEFAULT_PERMS))
-        root = Folder().load(root_id, force=True)  # TODO make it obsolete
         return self.vFile(abspath, root)
 
     def _handle_chunk(self, upload, chunk, filter=False, user=None):
