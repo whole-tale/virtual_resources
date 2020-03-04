@@ -134,5 +134,6 @@ class VirtualObject(Resource):
             "size": stat.st_size,
             "exts": [_[1:] for _ in path.suffixes],
             "created": datetime.datetime.fromtimestamp(stat.st_ctime),
+            "updated": datetime.datetime.fromtimestamp(stat.st_mtime),
             "itemId": self.generate_id(path.as_posix(), root["_id"]),
         }
