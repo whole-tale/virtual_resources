@@ -339,7 +339,6 @@ class FileOperationsTestCase(base.TestCase):
         file = resp.json
 
         self.assertHasKeys(file, ["itemId"])
-        self.assertEqual(file["assetstoreId"], None)
         self.assertEqual(file["name"], name)
         self.assertEqual(file["size"], len(chunk1 + chunk2))
 

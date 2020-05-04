@@ -196,7 +196,8 @@ class VirtualFile(VirtualObject):
             return upload
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    def read_chunk(self, event):
+    @validate_event(level=AccessType.WRITE)
+    def read_chunk(self, event, path, root, user=None):
         params = event.info["params"]
         if "chunk" in params:
             chunk = params["chunk"]
@@ -209,7 +210,8 @@ class VirtualFile(VirtualObject):
         else:
             chunk = RequestBodyStream(cherrypy.request.body)
 
-        user = self.getCurrentUser()
+        if not user:
+            user = self.getCurrentUser()
         offset = int(params.get("offset", 0))
         upload = Upload().load(params["uploadId"])
 
