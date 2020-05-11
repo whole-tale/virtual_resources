@@ -9,14 +9,22 @@ from girder.api.rest import Resource
 from girder.constants import AccessType
 from girder.exceptions import ValidationException
 from girder.models.folder import Folder
+from girder.models.upload import Upload
 
 
 def validate_event(level=AccessType.READ):
     def validation(func):
         def wrapper(self, event):
             params = event.info.get("params", {})
+            if "uploadId" in params:
+                upload = Upload().load(params["uploadId"])
+                parent_id = str(upload["parentId"])
+                parent_type = upload["parentType"]
+            else:
+                parent_id = params.get("parentId")
+                parent_type = params.get("parentType") or "folder"
+
             obj_id = event.info.get("id")
-            parent_id = params.get("parentId")
             folder_id = params.get("folderId")
             item_id = params.get("itemId")
             any_parent_id = parent_id or folder_id or item_id
@@ -33,7 +41,7 @@ def validate_event(level=AccessType.READ):
             elif any_parent_id and any_parent_id.startswith("wtlocal:"):
                 path, root_id = VirtualObject.path_from_id(any_parent_id)
 
-            elif (parent_id and params.get("parentType") == "folder") or folder_id:
+            elif (parent_id and parent_type == "folder") or folder_id:
                 root_folder = Folder().load(parent_id or folder_id, force=True) or {}
                 path = root_folder.get("fsPath")  # only exists on virtual folders
                 root_id = str(root_folder.get("_id"))
