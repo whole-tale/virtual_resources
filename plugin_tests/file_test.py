@@ -433,7 +433,7 @@ class FileOperationsTestCase(base.TestCase):
         )
         self.assertStatus(resp, 500)
         self.assertEqual(
-            resp.json["message"], "Exception: Exception('Failed to store upload.',)",
+            resp.json["message"], "Exception: Exception('Failed to store upload.')",
         )
         dest_dir.chmod(0o775)
 
