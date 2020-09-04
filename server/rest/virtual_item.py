@@ -85,7 +85,9 @@ class VirtualItem(VirtualObject):
                 try:
                     dst_path = pathlib.Path(dst_root["fsPath"])
                 except KeyError:
-                    raise GirderException("Folder {} is not a mapping.".format(parentId))
+                    raise GirderException(
+                        "Folder {} is not a mapping.".format(parentId)
+                    )
                 dst_root_id = str(dst_root["_id"])
             self.is_dir(dst_path, dst_root_id)
             new_path = dst_path / name
@@ -126,6 +128,12 @@ class VirtualItem(VirtualObject):
         else:
             new_root = root
 
+        checkName = (new_dirname / name) == path
+        n = 0
+        while checkName:
+            n += 1
+            name = "%s (%d)" % (path.name, n)
+            checkName = (new_dirname / name).exists()
         new_path = new_dirname / name
         shutil.copy(path.as_posix(), new_path.as_posix())
         event.preventDefault().addResponse(

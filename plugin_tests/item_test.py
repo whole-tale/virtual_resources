@@ -348,6 +348,30 @@ class ItemOperationsTestCase(base.TestCase):
         self.assertTrue(file_new.exists())
         file_new.unlink()
 
+    def test_copy_existing_name(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        file1 = root_path / "existing.txt"
+        file1_contents = b"Blah Blah Blah"
+        with file1.open(mode="wb") as fp:
+            fp.write(file1_contents)
+        item_id = VirtualObject.generate_id(file1, self.private_folder["_id"])
+
+        resp = self.request(
+            path="/item/{}/copy".format(item_id),
+            method="POST",
+            user=self.users["admin"],
+            params={},
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(resp.json["name"], "existing.txt (1)")
+
+        self.assertStatusOk(resp)
+        self.assertTrue((root_path / "existing.txt (1)").is_file())
+        file1.unlink()
+        (root_path / "existing.txt (1)").unlink()
+
     def tearDown(self):
         for folder in (self.public_folder, self.private_folder, self.regular_folder):
             Folder().remove(folder)

@@ -107,13 +107,12 @@ class VirtualResource(VirtualObject):
                     )
                 else:
                     name = source_path.name
-                    if source_path == (path / source_path.name):
-                        checkName = source_path.name == name
-                        n = 0
-                        while checkName:
-                            n += 1
-                            name = "%s (%d)" % (source_path.name, n)
-                            checkName = (path / name).exists()
+                    checkName = source_path == (path / name)
+                    n = 0
+                    while checkName:
+                        n += 1
+                        name = "%s (%d)" % (source_path.name, n)
+                        checkName = (path / name).exists()
                     shutil.copy(source_path.as_posix(), (path / name).as_posix())
                 ctx.update(increment=1)
 
@@ -170,7 +169,7 @@ class VirtualResource(VirtualObject):
     def _get_vobject(self, document, path, i):
         pathArray = split(path)
         root = document
-        fspath = os.path.join(document["fsPath"], "/".join(pathArray[3 + i :]))
+        fspath = os.path.join(document["fsPath"], "/".join(pathArray[3 + i:]))
         fspath = pathlib.Path(fspath)
         if not fspath.exists():
             raise ValidationException("Path not found: %s" % path)
