@@ -90,8 +90,27 @@ class VirtualFolder(VirtualObject):
     @validate_event(level=AccessType.WRITE)
     def rename_folder(self, event, path, root, user=None):
         self.is_dir(path, root["_id"])
-        new_path = path.with_name(event.info["params"]["name"])
-        path.rename(new_path)
+        source = self.vFolder(path, root)
+
+        params = event.info.get("params", {})
+        name = params.get("name", path.name)
+        parentId = params.get("parentId", source["parentId"])
+
+        if parentId == source["parentId"]:
+            if name == path.name:
+                raise GirderException(
+                    "Folder '{}' already exists in {}".format(name, parentId)
+                )
+            # Just rename in place
+            new_path = path.with_name(name)
+            path.rename(new_path)
+        else:
+            dst_path, dst_root_id = self.path_from_id(parentId)
+            new_path = dst_path / name
+            shutil.move(
+                path.as_posix(), new_path.as_posix(), copy_function=shutil.copytree
+            )
+
         event.preventDefault().addResponse(
             Folder().filter(self.vFolder(new_path, root), user=user)
         )

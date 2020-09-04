@@ -72,6 +72,16 @@ class FolderOperationsTestCase(base.TestCase):
         self.public_folder.update(dict(fsPath=self.public_root, isMapping=True))
         self.public_folder = Folder().save(self.public_folder)
 
+        self.private_folder = Folder().createFolder(
+            self.base_collection,
+            "private",
+            parentType="collection",
+            public=True,
+            reuseExisting=True,
+        )
+        self.private_folder.update(dict(fsPath=self.private_root, isMapping=True))
+        self.private_folder = Folder().save(self.private_folder)
+
         self.regular_folder = Folder().createFolder(
             self.base_collection,
             "regular",
@@ -142,6 +152,53 @@ class FolderOperationsTestCase(base.TestCase):
         )
         self.assertStatusOk(resp)
         self.assertFalse(actual_folder_path.exists())
+
+    def test_folder_move(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        dir1 = root_path / "some_dir"
+        dir1.mkdir()
+        file1 = dir1 / "some_file"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"\n")
+
+        folder_id = VirtualObject.generate_id(dir1, self.public_folder["_id"])
+
+        resp = self.request(
+            path="/folder/{}".format(folder_id),
+            method="PUT",
+            user=self.users["admin"],
+            params={"name": dir1.name},
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(
+            resp.json["message"],
+            "Folder '{}' already exists in {}".format(
+                dir1.name, self.public_folder["_id"]
+            ),
+        )
+
+        new_root_path = pathlib.Path(self.private_folder["fsPath"])
+        dir2 = new_root_path / "level1"
+        dir2.mkdir()
+        new_folder_id = VirtualObject.generate_id(dir2, self.private_folder["_id"])
+
+        resp = self.request(
+            path="/folder/{}".format(folder_id),
+            method="PUT",
+            user=self.users["admin"],
+            params={"parentId": new_folder_id, "parentType": "folder"},
+        )
+        self.assertStatusOk(resp)
+        self.assertFalse(dir1.exists())
+        self.assertTrue((dir2 / dir1.name).exists())
+        new_file = dir2 / dir1.name / file1.name
+        self.assertTrue(new_file.exists())
+        new_file.unlink()
+        (dir2 / dir1.name).rmdir()
+        dir2.rmdir()
 
     def test_folder_details(self):
         root_path = pathlib.Path(self.public_folder["fsPath"])
@@ -347,6 +404,8 @@ class FolderOperationsTestCase(base.TestCase):
 
     def tearDown(self):
         Folder().remove(self.public_folder)
+        Folder().remove(self.private_folder)
+        Folder().remove(self.regular_folder)
         Collection().remove(self.base_collection)
         for user in self.users.values():
             User().remove(user)
