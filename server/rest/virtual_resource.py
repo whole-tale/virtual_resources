@@ -2,17 +2,27 @@
 # -*- coding: utf-8 -*-
 import json
 from operator import itemgetter
+import os
+import pathlib
 import shutil
 
 from girder import events
 
 from girder.api import access
 from girder.constants import AccessType, TokenScope
-from girder.exceptions import AccessException
+from girder.exceptions import AccessException, ValidationException, ResourcePathNotFound
+from girder.models.collection import Collection
 from girder.models.folder import Folder
+from girder.models.user import User
+from girder.utility.path import lookUpToken, split
+from girder.utility.model_importer import ModelImporter
 from girder.utility.progress import ProgressContext
 
 from . import VirtualObject, validate_event
+
+
+class EmptyDocument(Exception):
+    pass
 
 
 class VirtualResource(VirtualObject):
@@ -27,7 +37,7 @@ class VirtualResource(VirtualObject):
         # PUT /resource/:id/timestamp
         events.bind("rest.post.resource/copy.before", name, self.copy_resources)
         # GET /resource/:id/download
-        # GET /resource/lookup
+        events.bind("rest.get.resource/lookup.before", name, self.lookup)
         events.bind("rest.put.resource/move.before", name, self.move_resources)
         # GET /resource/search
 
@@ -96,9 +106,15 @@ class VirtualResource(VirtualObject):
                         source_path.as_posix(), (path / source_path.name).as_posix()
                     )
                 else:
-                    shutil.copy(
-                        source_path.as_posix(), (path / source_path.name).as_posix()
-                    )
+                    name = source_path.name
+                    if source_path == (path / source_path.name):
+                        checkName = source_path.name == name
+                        n = 0
+                        while checkName:
+                            n += 1
+                            name = "%s (%d)" % (source_path.name, n)
+                            checkName = (path / name).exists()
+                    shutil.copy(source_path.as_posix(), (path / name).as_posix())
                 ctx.update(increment=1)
 
     @access.user(scope=TokenScope.DATA_WRITE)
@@ -120,3 +136,93 @@ class VirtualResource(VirtualObject):
                     source_path.as_posix(), (path / source_path.name).as_posix()
                 )
                 ctx.update(increment=1)
+
+    @access.public(scope=TokenScope.DATA_READ)
+    def lookup(self, event):
+        test = event.info["params"].get("test", False)
+        path = event.info["params"].get("path")
+        response = self._lookUpPath(path, self.getCurrentUser(), test)["document"]
+        event.preventDefault().addResponse(response)
+
+    @staticmethod
+    def _lookup_err(msg, test=False):
+        if test:
+            raise EmptyDocument
+        else:
+            raise ResourcePathNotFound(msg)
+
+    def _get_base(self, pathArray, test=False):
+        model = pathArray[0]
+        if model == "user":
+            username = pathArray[1]
+            parent = User().findOne({"login": username})
+            if parent is None:
+                self._lookup_err("User not found: %s" % username, test=test)
+        elif model == "collection":
+            collectionName = pathArray[1]
+            parent = Collection().findOne({"name": collectionName})
+            if parent is None:
+                self._lookup_err("Collection not found: %s" % collectionName, test=test)
+        else:
+            raise ValidationException("Invalid path format")
+        return parent, model
+
+    def _get_vobject(self, document, path, i):
+        pathArray = split(path)
+        root = document
+        fspath = os.path.join(document["fsPath"], "/".join(pathArray[3 + i :]))
+        fspath = pathlib.Path(fspath)
+        if not fspath.exists():
+            raise ValidationException("Path not found: %s" % path)
+        if fspath.is_dir():
+            document = self.vFolder(fspath, root)
+            model = "folder"
+        elif fspath.is_file():
+            document = self.vItem(fspath, root)
+            model = "item"
+        # TODO: add vLink here...
+        return document, model
+
+    def _lookUpPath(self, path, user=None, test=False, filter=True, force=False):
+        """
+        Look up a resource in the data hierarchy by path.
+
+        :param path: path of the resource
+        :param user: user with correct privileges to access path
+        :param test: defaults to false, when set to true
+            will return None instead of throwing exception when
+            path doesn't exist
+        :type test: bool
+        :param filter: Whether the returned model should be filtered.
+        :type filter: bool
+        :param force: if True, don't validate the access.
+        :type force: bool
+        """
+        path = path.lstrip("/")
+        pathArray = split(path)
+
+        try:
+            document, model = self._get_base(pathArray, test=test)
+        except EmptyDocument:
+            return {"model": None, "document": None}
+
+        try:
+            if not force:
+                ModelImporter.model(model).requireAccess(document, user)
+            for i, token in enumerate(pathArray[2:]):
+                document, model = lookUpToken(token, model, document)
+                if not force:
+                    ModelImporter.model(model).requireAccess(document, user)
+                if "fsPath" in document:
+                    break
+            if token != pathArray[-1]:
+                document, model = self._get_vobject(document, path, i)
+        except (ValidationException, AccessException):
+            if test:
+                return {"model": None, "document": None}
+            raise ResourcePathNotFound("Path not found: %s" % path)
+
+        if filter:
+            document = ModelImporter.model(model).filter(document, user)
+
+        return {"model": model, "document": document}
