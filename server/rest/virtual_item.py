@@ -65,8 +65,34 @@ class VirtualItem(VirtualObject):
     @validate_event(level=AccessType.WRITE)
     def rename_item(self, event, path, root, user=None):
         self.is_file(path, root["_id"])
-        new_path = path.with_name(event.info["params"]["name"])
-        path.rename(new_path)
+        source = self.vItem(path, root)
+
+        params = event.info.get("params", {})
+        name = params.get("name", path.name)
+        parentId = params.get("folderId", source["folderId"])
+
+        if parentId == source["folderId"]:
+            if path.name == name:
+                new_path = path
+            else:
+                new_path = path.with_name(name)
+                path.rename(new_path)
+        else:
+            if str(parentId).startswith("wtlocal:"):
+                dst_path, dst_root_id = self.path_from_id(parentId)
+            else:
+                dst_root = Folder().load(parentId, force=True, exc=True)
+                try:
+                    dst_path = pathlib.Path(dst_root["fsPath"])
+                except KeyError:
+                    raise GirderException(
+                        "Folder {} is not a mapping.".format(parentId)
+                    )
+                dst_root_id = str(dst_root["_id"])
+            self.is_dir(dst_path, dst_root_id)
+            new_path = dst_path / name
+            shutil.move(path.as_posix(), new_path.as_posix())
+
         event.preventDefault().addResponse(
             Item().filter(self.vItem(new_path, root), user=user)
         )
@@ -102,6 +128,12 @@ class VirtualItem(VirtualObject):
         else:
             new_root = root
 
+        checkName = (new_dirname / name) == path
+        n = 0
+        while checkName:
+            n += 1
+            name = "%s (%d)" % (path.name, n)
+            checkName = (new_dirname / name).exists()
         new_path = new_dirname / name
         shutil.copy(path.as_posix(), new_path.as_posix())
         event.preventDefault().addResponse(

@@ -273,6 +273,96 @@ class ResourceOperationsTestCase(base.TestCase):
         self.assertTrue((move_target_dir / nested_dir.name).is_dir())
         self.assertTrue((move_target_dir / file1.name).is_file())
 
+    def test_lookup(self):
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        nested_dir = root_path / "level0"
+        nested_dir.mkdir(parents=True)
+        file1 = root_path / "some_file.txt"
+        file1_contents = b"Blah Blah Blah"
+        with file1.open(mode="wb") as fp:
+            fp.write(file1_contents)
+
+        for model, lookup_path in (
+            ("folder", "/collection/Virtual Resources/private/level0"),
+            ("item", "/collection/Virtual Resources/private/some_file.txt"),
+        ):
+            resp = self.request(
+                path="/resource/lookup",
+                method="GET",
+                user=self.users["admin"],
+                params={"path": lookup_path},
+            )
+            self.assertStatusOk(resp)
+            self.assertEqual(resp.json["_modelType"], model)
+            self.assertEqual(resp.json["name"], pathlib.Path(lookup_path).name)
+
+        # test should return empty document for nonexisting file
+        for path in (
+            "/user/nonexisting/blah",
+            "/collection/Virtual Resources/private/level0/blah",
+        ):
+            resp = self.request(
+                path="/resource/lookup",
+                method="GET",
+                user=self.users["admin"],
+                params={"path": path, "test": True},
+                exception=True,
+            )
+            self.assertStatus(resp, 200)
+            self.assertEqual(resp.json, None)
+
+        for path, msg in (
+            ("/user/nonexisting/blah", "User not found: nonexisting"),
+            ("/collection/nonexisting/blah", "Collection not found: nonexisting"),
+            ("/blah/nonexisting/blah", "Invalid path format"),
+            (
+                "/collection/Virtual Resources/private/level0/blah",
+                "Path not found: collection/Virtual Resources/private/level0/blah",
+            ),
+        ):
+
+            resp = self.request(
+                path="/resource/lookup",
+                method="GET",
+                user=self.users["admin"],
+                params={"path": path},
+                exception=True,
+            )
+            self.assertStatus(resp, 400)
+            self.assertEqual(resp.json["message"], msg)
+
+        file1.unlink()
+        nested_dir.rmdir()
+
+    def test_copy_existing_name(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        file1 = root_path / "existing.txt"
+        file1_contents = b"Blah Blah Blah"
+        with file1.open(mode="wb") as fp:
+            fp.write(file1_contents)
+
+        resources = {
+            "item": [
+                VirtualObject.generate_id(file1.as_posix(), self.private_folder["_id"])
+            ],
+        }
+        resp = self.request(
+            path="/resource/copy",
+            method="POST",
+            user=self.users["admin"],
+            params={
+                "parentType": "folder",
+                "parentId": self.private_folder["_id"],
+                "resources": json.dumps(resources),
+            },
+        )
+        self.assertStatusOk(resp)
+        self.assertTrue((root_path / "existing.txt (1)").is_file())
+        file1.unlink()
+        (root_path / "existing.txt (1)").unlink()
+
     def tearDown(self):
         for folder in (self.public_folder, self.private_folder, self.regular_folder):
             Folder().remove(folder)

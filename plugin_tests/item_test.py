@@ -264,6 +264,114 @@ class ItemOperationsTestCase(base.TestCase):
         file1.with_name("copy").unlink()
         cors_file.unlink()
 
+    def test_move_item(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        subdir = root_path / "subdir"
+        subdir.mkdir()
+        file1 = subdir / "to_be_moved"
+        file_contents = b"hello world asdfadsf\n"
+        with file1.open(mode="wb") as fp:
+            fp.write(file_contents)
+        folder_id = VirtualObject.generate_id(subdir, self.public_folder["_id"])
+        item_id = VirtualObject.generate_id(file1, self.public_folder["_id"])
+
+        # Move with the same name (noop)
+        resp = self.request(
+            path="/item/{}".format(item_id),
+            method="PUT",
+            user=self.users["admin"],
+            params={"name": file1.name, "folderId": folder_id},
+        )
+        self.assertStatusOk(resp)
+        self.assertTrue(file1.exists())
+
+        # Move within the same folder
+        resp = self.request(
+            path="/item/{}".format(item_id),
+            method="PUT",
+            user=self.users["admin"],
+            params={"name": "after_move", "folderId": folder_id},
+        )
+        self.assertStatusOk(resp)
+        self.assertTrue((subdir / "after_move").exists())
+        self.assertFalse(file1.exists())
+
+        # Move to a different folder
+        file1 = subdir / "after_move"
+        item_id = VirtualObject.generate_id(file1, self.public_folder["_id"])
+        resp = self.request(
+            path="/item/{}".format(item_id),
+            method="PUT",
+            user=self.users["admin"],
+            params={"name": "after_move", "folderId": self.private_folder["_id"]},
+        )
+        self.assertStatusOk(resp)
+        self.assertFalse(file1.exists())
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        file_new = root_path / "after_move"
+        item_id = VirtualObject.generate_id(file_new, self.private_folder["_id"])
+
+        self.assertTrue(file_new.is_file())
+        with open(file_new.as_posix(), "rb") as fp:
+            self.assertEqual(fp.read(), file_contents)
+
+        # Try to move not into mapping and fail
+        resp = self.request(
+            path="/item/{}".format(item_id),
+            method="PUT",
+            user=self.users["sally"],
+            params={
+                "name": "after_move",
+                "folderId": str(self.regular_folder["_id"]),
+                "parentType": "folder",
+            },
+            exception=True,
+        )
+        self.assertStatus(resp, 500)
+        self.assertEqual(
+            resp.json["message"],
+            "Folder {} is not a mapping.".format(self.regular_folder["_id"]),
+        )
+
+        # move it back to subdir in a mapping
+        resp = self.request(
+            path="/item/{}".format(item_id),
+            method="PUT",
+            user=self.users["admin"],
+            params={"name": "final_move", "folderId": folder_id},
+        )
+        self.assertStatusOk(resp)
+        self.assertFalse(file_new.exists())
+        file_new = subdir / "final_move"
+        self.assertTrue(file_new.exists())
+        file_new.unlink()
+
+    def test_copy_existing_name(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        file1 = root_path / "existing.txt"
+        file1_contents = b"Blah Blah Blah"
+        with file1.open(mode="wb") as fp:
+            fp.write(file1_contents)
+        item_id = VirtualObject.generate_id(file1, self.private_folder["_id"])
+
+        resp = self.request(
+            path="/item/{}/copy".format(item_id),
+            method="POST",
+            user=self.users["admin"],
+            params={},
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(resp.json["name"], "existing.txt (1)")
+
+        self.assertStatusOk(resp)
+        self.assertTrue((root_path / "existing.txt (1)").is_file())
+        file1.unlink()
+        (root_path / "existing.txt (1)").unlink()
+
     def tearDown(self):
         for folder in (self.public_folder, self.private_folder, self.regular_folder):
             Folder().remove(folder)
