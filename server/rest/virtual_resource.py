@@ -10,11 +10,16 @@ from girder import events
 
 from girder.api import access
 from girder.constants import AccessType, TokenScope
-from girder.exceptions import AccessException, ValidationException, ResourcePathNotFound
+from girder.exceptions import (
+    AccessException,
+    ValidationException,
+    ResourcePathNotFound,
+    RestException,
+)
 from girder.models.collection import Collection
 from girder.models.folder import Folder
 from girder.models.user import User
-from girder.utility.path import lookUpToken, split
+from girder.utility.path import lookUpToken, split, getResourcePath
 from girder.utility.model_importer import ModelImporter
 from girder.utility.progress import ProgressContext
 
@@ -33,7 +38,7 @@ class VirtualResource(VirtualObject):
 
         events.bind("rest.delete.resource.before", name, self.delete_resources)
         # GET /resource/:id
-        # GET /resource/:id/path
+        events.bind("rest.get.resource/:id/path.before", name, self.path)
         # PUT /resource/:id/timestamp
         events.bind("rest.post.resource/copy.before", name, self.copy_resources)
         # GET /resource/:id/download
@@ -137,6 +142,25 @@ class VirtualResource(VirtualObject):
                 ctx.update(increment=1)
 
     @access.public(scope=TokenScope.DATA_READ)
+    @validate_event(level=AccessType.READ)
+    def path(self, event, path, root, user=None):
+        res_type = event.info["params"]["type"]
+        try:
+            if res_type == "folder":
+                self.is_dir(path, root)
+            elif res_type in ("item", "file"):
+                self.is_file(path, root)
+            else:
+                raise ValidationException("Not a file, nor a folder")
+        except ValidationException:
+            raise RestException("Invalid resource id.")
+
+        root_girder_path = pathlib.Path(getResourcePath("folder", root, user=user))
+        remainder_path = path.relative_to(pathlib.PosixPath(root["fsPath"]))
+        response = (root_girder_path / remainder_path).as_posix()
+        event.preventDefault().addResponse(response)
+
+    @access.public(scope=TokenScope.DATA_READ)
     def lookup(self, event):
         test = event.info["params"].get("test", False)
         path = event.info["params"].get("path")
@@ -169,7 +193,8 @@ class VirtualResource(VirtualObject):
     def _get_vobject(self, document, path, i):
         pathArray = split(path)
         root = document
-        fspath = os.path.join(document["fsPath"], "/".join(pathArray[3 + i:]))
+        n = 3 + i
+        fspath = os.path.join(document["fsPath"], "/".join(pathArray[n:]))
         fspath = pathlib.Path(fspath)
         if not fspath.exists():
             raise ValidationException("Path not found: %s" % path)
