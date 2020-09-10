@@ -88,13 +88,13 @@ class VirtualObject(Resource):
             )
 
     def vFolder(self, path, root):
-        if path.as_posix() == root["fsPath"]:
+        if path == pathlib.Path(root["fsPath"]):
             return root
 
         self.is_dir(path, root["_id"])
         stat = path.stat()
 
-        if path.parent.as_posix() == root["fsPath"]:
+        if path.parent == pathlib.Path(root["fsPath"]):
             parentId = root["_id"]
         else:
             parentId = self.generate_id(path.parent.as_posix(), root["_id"])
