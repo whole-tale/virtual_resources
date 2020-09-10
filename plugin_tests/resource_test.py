@@ -346,7 +346,7 @@ class ResourceOperationsTestCase(base.TestCase):
         resources = {
             "item": [
                 VirtualObject.generate_id(file1.as_posix(), self.private_folder["_id"])
-            ],
+            ]
         }
         resp = self.request(
             path="/resource/copy",
@@ -362,6 +362,62 @@ class ResourceOperationsTestCase(base.TestCase):
         self.assertTrue((root_path / "existing.txt (1)").is_file())
         file1.unlink()
         (root_path / "existing.txt (1)").unlink()
+
+    def test_path(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        nested_dir = root_path / "directory"
+        nested_dir.mkdir(parents=True)
+        file1 = nested_dir / "file.txt"
+        file1_contents = b"Blah Blah Blah"
+        with file1.open(mode="wb") as fp:
+            fp.write(file1_contents)
+
+        item_id = VirtualObject.generate_id(
+            file1.as_posix(), self.private_folder["_id"]
+        )
+        folder_id = VirtualObject.generate_id(
+            nested_dir.as_posix(), self.private_folder["_id"]
+        )
+
+        resp = self.request(
+            path="/resource/{}/path".format(item_id),
+            method="GET",
+            user=self.users["admin"],
+            params={"type": "item"},
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(
+            resp.json, "/collection/Virtual Resources/private/directory/file.txt"
+        )
+
+        resp = self.request(
+            path="/resource/{}/path".format(folder_id),
+            method="GET",
+            user=self.users["admin"],
+            params={"type": "folder"},
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(resp.json, "/collection/Virtual Resources/private/directory")
+
+        for res_id, res_type in (
+            (item_id, "folder"),
+            (folder_id, "item"),
+            (item_id, "collection"),
+        ):
+            resp = self.request(
+                path="/resource/{}/path".format(res_id),
+                method="GET",
+                user=self.users["admin"],
+                params={"type": res_type},
+                exception=True,
+            )
+            self.assertStatus(resp, 400)
+            self.assertEqual(resp.json["message"], "Invalid resource id.")
+
+        file1.unlink()
+        nested_dir.rmdir()
 
     def tearDown(self):
         for folder in (self.public_folder, self.private_folder, self.regular_folder):
