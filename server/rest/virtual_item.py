@@ -78,17 +78,11 @@ class VirtualItem(VirtualObject):
                 new_path = path.with_name(name)
                 path.rename(new_path)
         else:
-            if str(parentId).startswith("wtlocal:"):
-                dst_path, dst_root_id = self.path_from_id(parentId)
-            else:
-                dst_root = Folder().load(parentId, force=True, exc=True)
-                try:
-                    dst_path = pathlib.Path(dst_root["fsPath"])
-                except KeyError:
-                    raise GirderException(
-                        "Folder {} is not a mapping.".format(parentId)
-                    )
-                dst_root_id = str(dst_root["_id"])
+            dst_path, dst_root_id = self.path_from_id(parentId)
+            if not dst_path:
+                raise GirderException("Folder {} is not a mapping.".format(parentId))
+            # Check wheter the user can write to the destination
+            Folder().load(dst_root_id, user=user, level=AccessType.WRITE, exc=True)
             self.is_dir(dst_path, dst_root_id)
             new_path = dst_path / name
             shutil.move(path.as_posix(), new_path.as_posix())
