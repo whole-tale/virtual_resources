@@ -200,6 +200,34 @@ class FolderOperationsTestCase(base.TestCase):
         (dir2 / dir1.name).rmdir()
         dir2.rmdir()
 
+    def test_move_to_root(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        dir1 = root_path / "some_dir"
+        dir1.mkdir()
+        file1 = dir1 / "some_file"
+        with file1.open(mode="wb") as fp:
+            fp.write(b"\n")
+        folder_id = VirtualObject.generate_id(dir1, self.public_folder["_id"])
+
+        resp = self.request(
+            path="/folder/{}".format(folder_id),
+            method="PUT",
+            user=self.users["admin"],
+            params={"parentId": self.private_folder["_id"], "parentType": "folder"},
+        )
+        self.assertStatusOk(resp)
+        self.assertFalse(dir1.exists())
+
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        dir1 = root_path / "some_dir"
+        file1 = dir1 / "some_file"
+        self.assertTrue(dir1.exists())
+        self.assertTrue(file1.exists())
+        file1.unlink()
+        dir1.rmdir()
+
     def test_folder_details(self):
         root_path = pathlib.Path(self.public_folder["fsPath"])
         dir1 = root_path / "some_dir"

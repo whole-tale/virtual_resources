@@ -154,21 +154,13 @@ class VirtualFolder(VirtualObject):
             raise GirderException(
                 "Folder '{}' already exists at {}".format(name, path.as_posix())
             )
-        if str(parentId).startswith("wtlocal:"):
-            dst_path, dst_root_id = self.path_from_id(parentId)
-            dst_root = Folder().load(
-                dst_root_id, user=user, level=AccessType.WRITE, exc=True
-            )
-        else:
-            dst_root = Folder().load(
-                parentId, user=user, level=AccessType.WRITE, exc=True
-            )
-            try:
-                dst_path = pathlib.Path(dst_root["fsPath"])
-            except KeyError:
-                raise GirderException(
-                    "Folder {} is not a mapping.".format(dst_root["_id"])
-                )
+
+        dst_path, dst_root_id = self.path_from_id(parentId)
+        dst_root = Folder().load(
+            dst_root_id, user=user, level=AccessType.WRITE, exc=True
+        )
+        if "fsPath" not in dst_root:
+            raise GirderException("Folder {} is not a mapping.".format(dst_root["_id"]))
 
         shutil.copytree(path.as_posix(), (dst_path / name).as_posix())
         event.preventDefault().addResponse(

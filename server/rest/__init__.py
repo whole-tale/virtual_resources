@@ -31,20 +31,11 @@ def validate_event(level=AccessType.READ):
 
             path = None
             if obj_id:
-                if obj_id.startswith("wtlocal:"):
-                    path, root_id = VirtualObject.path_from_id(obj_id)
-                else:
-                    root_folder = Folder().load(obj_id, force=True) or {}
-                    path = root_folder.get("fsPath")  # only exists on virtual folders
-                    root_id = str(root_folder.get("_id"))
-
+                path, root_id = VirtualObject.path_from_id(obj_id)
             elif any_parent_id and any_parent_id.startswith("wtlocal:"):
                 path, root_id = VirtualObject.path_from_id(any_parent_id)
-
             elif (parent_id and parent_type == "folder") or folder_id:
-                root_folder = Folder().load(parent_id or folder_id, force=True) or {}
-                path = root_folder.get("fsPath")  # only exists on virtual folders
-                root_id = str(root_folder.get("_id"))
+                path, root_id = VirtualObject.path_from_id(parent_id or folder_id)
 
             if path:
                 path = pathlib.Path(path)
@@ -71,9 +62,16 @@ class VirtualObject(Resource):
 
     @staticmethod
     def path_from_id(object_id):
-        decoded = base64.b64decode(object_id[8:]).decode()
-        path, root_id = decoded.split("|")
-        return pathlib.Path(path), root_id
+        if str(object_id).startswith("wtlocal:"):
+            decoded = base64.b64decode(object_id[8:]).decode()
+            path, root_id = decoded.split("|")
+        else:
+            root_folder = Folder().load(object_id, force=True) or {}
+            path = root_folder.get("fsPath")  # only exists on virtual folders
+            root_id = str(root_folder.get("_id"))
+        if path:
+            path = pathlib.Path(path)
+        return path, root_id
 
     def is_file(self, path, root_id):
         if not path.is_file():
