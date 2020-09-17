@@ -106,6 +106,8 @@ class VirtualFolder(VirtualObject):
             path.rename(new_path)
         else:
             dst_path, dst_root_id = self.path_from_id(parentId)
+            # Check wheter the user can write to the destination
+            Folder().load(dst_root_id, user=user, level=AccessType.WRITE, exc=True)
             new_path = dst_path / name
             shutil.move(
                 path.as_posix(), new_path.as_posix(), copy_function=shutil.copytree
