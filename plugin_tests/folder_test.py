@@ -8,6 +8,7 @@ import zipfile
 
 from tests import base
 
+from girder.constants import AccessType
 from girder.models.collection import Collection
 from girder.models.folder import Folder
 from girder.models.user import User
@@ -54,6 +55,7 @@ class FolderOperationsTestCase(base.TestCase):
         self.public_root = tempfile.mkdtemp()
         self.shared_root = tempfile.mkdtemp()
         self.private_root = tempfile.mkdtemp()
+        self.private2_root = tempfile.mkdtemp()
 
         self.base_collection = Collection().createCollection(
             "Virtual Resources",
@@ -76,11 +78,33 @@ class FolderOperationsTestCase(base.TestCase):
             self.base_collection,
             "private",
             parentType="collection",
-            public=True,
+            public=False,
+            creator=self.users["sally"],
             reuseExisting=True,
         )
         self.private_folder.update(dict(fsPath=self.private_root, isMapping=True))
+        Folder().setUserAccess(
+            self.private_folder, self.users["sally"], AccessType.WRITE
+        )
+        Folder().setUserAccess(self.private_folder, self.users["joel"], AccessType.READ)
         self.private_folder = Folder().save(self.private_folder)
+
+        self.private_folder2 = Folder().createFolder(
+            self.base_collection,
+            "private2",
+            parentType="collection",
+            public=False,
+            creator=self.users["sally"],
+            reuseExisting=True,
+        )
+        self.private_folder2.update(dict(fsPath=self.private2_root, isMapping=True))
+        Folder().setUserAccess(
+            self.private_folder2, self.users["sally"], AccessType.WRITE
+        )
+        Folder().setUserAccess(
+            self.private_folder2, self.users["joel"], AccessType.WRITE
+        )
+        self.private_folder2 = Folder().save(self.private_folder2)
 
         self.regular_folder = Folder().createFolder(
             self.base_collection,
@@ -226,6 +250,47 @@ class FolderOperationsTestCase(base.TestCase):
         self.assertTrue(dir1.exists())
         self.assertTrue(file1.exists())
         file1.unlink()
+        dir1.rmdir()
+
+    def test_move_acls(self):
+        from girder.plugins.virtual_resources.rest import VirtualObject
+
+        root_path = pathlib.Path(self.private_folder["fsPath"])
+        dir1 = root_path / "some_dir"
+        dir1.mkdir()
+
+        folder_id = VirtualObject.generate_id(dir1, self.private_folder["_id"])
+
+        resp = self.request(
+            path="/folder/{}".format(folder_id),
+            method="PUT",
+            user=self.users["joel"],
+            params={"parentId": self.private_folder2["_id"], "parentType": "folder"},
+        )
+        self.assertStatus(resp, 403)
+
+        resp = self.request(
+            path="/folder/{}".format(folder_id),
+            method="PUT",
+            user=self.users["sally"],
+            params={"parentId": self.private_folder2["_id"], "parentType": "folder"},
+        )
+        self.assertStatusOk(resp)
+
+        self.assertFalse(dir1.exists())
+        root_path = pathlib.Path(self.private_folder2["fsPath"])
+        dir1 = root_path / "some_dir"
+        self.assertTrue(dir1.exists())
+        folder_id = VirtualObject.generate_id(dir1, self.private_folder2["_id"])
+
+        resp = self.request(
+            path="/folder/{}".format(folder_id),
+            method="PUT",
+            user=self.users["joel"],
+            params={"parentId": self.private_folder["_id"], "parentType": "folder"},
+        )
+        self.assertStatus(resp, 403)
+
         dir1.rmdir()
 
     def test_folder_details(self):
@@ -433,10 +498,16 @@ class FolderOperationsTestCase(base.TestCase):
     def tearDown(self):
         Folder().remove(self.public_folder)
         Folder().remove(self.private_folder)
+        Folder().remove(self.private_folder2)
         Folder().remove(self.regular_folder)
         Collection().remove(self.base_collection)
         for user in self.users.values():
             User().remove(user)
-        for root in (self.public_root, self.shared_root, self.private_root):
+        for root in (
+            self.public_root,
+            self.shared_root,
+            self.private_root,
+            self.private2_root,
+        ):
             shutil.rmtree(root)
         super(FolderOperationsTestCase, self).tearDown()
