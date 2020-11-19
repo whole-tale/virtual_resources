@@ -86,11 +86,16 @@ class VirtualObject(Resource):
             )
 
     def vFolder(self, path, root):
-        if path == pathlib.Path(root["fsPath"]):
-            return root
-
         self.is_dir(path, root["_id"])
         stat = path.stat()
+
+        if path == pathlib.Path(root["fsPath"]):
+            # We want actual mtime/ctime from disk
+            root.update({
+                "created": datetime.datetime.fromtimestamp(stat.st_ctime),
+                "updated": datetime.datetime.fromtimestamp(stat.st_mtime),
+            })
+            return root
 
         if path.parent == pathlib.Path(root["fsPath"]):
             parentId = root["_id"]
