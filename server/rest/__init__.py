@@ -3,6 +3,7 @@
 import base64
 import copy
 import datetime
+import os
 import pathlib
 
 from girder.api.rest import Resource
@@ -79,6 +80,12 @@ class VirtualObject(Resource):
                 "Invalid ObjectId: %s" % self.generate_id(path, root_id), field="id"
             )
 
+    def is_symlink(self, path, root_id):
+        if not path.is_symlink():
+            raise ValidationException(
+                "Invalid ObjectId: %s" % self.generate_id(path, root_id), field="id"
+            )
+
     def is_dir(self, path, root_id):
         if not path.is_dir():
             raise ValidationException(
@@ -132,6 +139,22 @@ class VirtualObject(Resource):
             "lowerName": path.parts[-1].lower(),
         }
 
+    def vLink(self, path, root):
+        self.is_symlink(path, root["_id"])
+        stat = path.lstat()
+        return {
+            "_id": self.generate_id(path.as_posix(), root["_id"]),
+            "_modelType": None,
+            "name": path.parts[-1],
+            "folderId": self.generate_id(path.parent.as_posix(), root["_id"]),
+            "creatorId": None,
+            "created": datetime.datetime.fromtimestamp(stat.st_ctime),
+            "updated": datetime.datetime.fromtimestamp(stat.st_mtime),
+            "size": stat.st_size,
+            "lowerName": path.parts[-1].lower(),
+            "linkTarget": os.readlink(path)
+        }
+
     def vFile(self, path, root):
         self.is_file(path, root["_id"])
         stat = path.stat()
@@ -145,5 +168,6 @@ class VirtualObject(Resource):
             "size": stat.st_size,
             "exts": [_[1:] for _ in path.suffixes],
             "created": datetime.datetime.fromtimestamp(stat.st_ctime),
+            "updated": datetime.datetime.fromtimestamp(stat.st_mtime),
             "itemId": self.generate_id(path.as_posix(), root["_id"]),
         }
