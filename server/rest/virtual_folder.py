@@ -60,14 +60,16 @@ class VirtualFolder(VirtualObject):
         params = event.info["params"]
         offset = int(params.get("offset", 0))
         limit = int(params.get("limit", 50))
+        sort_key = params.get("sort", "lowerName")
         reverse = int(params.get("sortdir", pymongo.ASCENDING)) == pymongo.DESCENDING
+
+        folders = [self.vFolder(obj, root) for obj in path.iterdir() if obj.is_dir()]
+        folders = sorted(folders, key=itemgetter(sort_key), reverse=reverse)
+        upper_bound = limit + offset if limit > 0 else None
         response = [
-            Folder().filter(self.vFolder(obj, root), user=user)
-            for obj in path.iterdir()
-            if obj.is_dir()
+            Folder().filter(folder, user=user) for folder in folders[offset:upper_bound]
         ]
-        response = sorted(response, key=itemgetter("name"), reverse=reverse)
-        event.preventDefault().addResponse(response[offset : offset + limit])  # noqa
+        event.preventDefault().addResponse(response)
 
     @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event(level=AccessType.WRITE)
