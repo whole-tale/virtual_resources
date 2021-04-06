@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from operator import itemgetter
 import os
 import pathlib
-from operator import itemgetter
+import pymongo
 import shutil
 
 from girder import events
@@ -36,12 +37,19 @@ class VirtualItem(VirtualObject):
     @access.public(scope=TokenScope.DATA_READ)
     @validate_event(level=AccessType.READ)
     def get_child_items(self, event, path, root, user=None):
+        params = event.info["params"]
+        offset = int(params.get("offset", 0))
+        limit = int(params.get("limit", 50))
+        sort_key = params.get("sort", "lowerName")
+        reverse = int(params.get("sortdir", pymongo.ASCENDING)) == pymongo.DESCENDING
+
+        items = [self.vItem(obj, root) for obj in path.iterdir() if obj.is_file()]
+        items = sorted(items, key=itemgetter(sort_key), reverse=reverse)
+        upper_bound = limit + offset if limit > 0 else None
         response = [
-            Item().filter(self.vItem(obj, root), user=user)
-            for obj in path.iterdir()
-            if obj.is_file()
+            Item().filter(item, user=user) for item in items[offset:upper_bound]
         ]
-        event.preventDefault().addResponse(sorted(response, key=itemgetter("name")))
+        event.preventDefault().addResponse(response)
 
     @access.user(scope=TokenScope.DATA_WRITE)
     @validate_event(level=AccessType.WRITE)

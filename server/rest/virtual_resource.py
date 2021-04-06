@@ -233,7 +233,7 @@ class VirtualResource(VirtualObject):
         try:
             if not force:
                 ModelImporter.model(model).requireAccess(document, user)
-            for i, token in enumerate(pathArray[2:]):
+            for i, token in enumerate(pathArray[2:]):  # noqa
                 document, model = lookUpToken(token, model, document)
                 if not force:
                     ModelImporter.model(model).requireAccess(document, user)
