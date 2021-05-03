@@ -23,7 +23,7 @@ from girder.utility.path import lookUpToken, split, getResourcePath
 from girder.utility.model_importer import ModelImporter
 from girder.utility.progress import ProgressContext
 
-from . import VirtualObject, validate_event
+from . import VirtualObject, validate_event, ensure_unique_path
 
 
 class EmptyDocument(Exception):
@@ -112,13 +112,8 @@ class VirtualResource(VirtualObject):
                     )
                 else:
                     name = source_path.name
-                    checkName = source_path == (path / name)
-                    n = 0
-                    while checkName:
-                        n += 1
-                        name = "%s (%d)" % (source_path.name, n)
-                        checkName = (path / name).exists()
-                    shutil.copy(source_path.as_posix(), (path / name).as_posix())
+                    new_path = ensure_unique_path(path, name)
+                    shutil.copy(source_path.as_posix(), new_path.as_posix())
                 ctx.update(increment=1)
 
     @access.user(scope=TokenScope.DATA_WRITE)

@@ -14,7 +14,7 @@ from girder.exceptions import GirderException
 from girder.models.folder import Folder
 from girder.utility import ziputil
 
-from . import VirtualObject, validate_event
+from . import VirtualObject, validate_event, ensure_unique_path
 
 
 def file_stream(path, buf_size=65536):
@@ -154,11 +154,6 @@ class VirtualFolder(VirtualObject):
         name = params.get("name", path.name)
         parentId = params.get("parentId", source["parentId"])
 
-        if parentId == source["parentId"] and name == path.name:
-            raise GirderException(
-                "Folder '{}' already exists at {}".format(name, path.as_posix())
-            )
-
         dst_path, dst_root_id = self.path_from_id(parentId)
         dst_root = Folder().load(
             dst_root_id, user=user, level=AccessType.WRITE, exc=True
@@ -166,9 +161,10 @@ class VirtualFolder(VirtualObject):
         if "fsPath" not in dst_root:
             raise GirderException("Folder {} is not a mapping.".format(dst_root["_id"]))
 
-        shutil.copytree(path.as_posix(), (dst_path / name).as_posix())
+        new_path = ensure_unique_path(dst_path, name)
+        shutil.copytree(path.as_posix(), new_path.as_posix())
         event.preventDefault().addResponse(
-            Folder().filter(self.vFolder(dst_path / name, dst_root), user=user)
+            Folder().filter(self.vFolder(new_path, dst_root), user=user)
         )
 
     @access.public(scope=TokenScope.DATA_READ)

@@ -13,6 +13,17 @@ from girder.models.folder import Folder
 from girder.models.upload import Upload
 
 
+def ensure_unique_path(dirname, name):
+    checkName = (dirname / name).exists()
+    new_name = name
+    n = 0
+    while checkName:
+        n += 1
+        new_name = "%s (%d)" % (name, n)
+        checkName = (dirname / new_name).exists()
+    return dirname / new_name
+
+
 def validate_event(level=AccessType.READ):
     def validation(func):
         def wrapper(self, event):
