@@ -451,23 +451,22 @@ class FolderOperationsTestCase(base.TestCase):
             path="/folder/{}/copy".format(folder_id),
             method="POST",
             user=self.users["sally"],
-            params={},
-            exception=True,
-        )
-        self.assertStatus(resp, 500)
-        self.assertEqual(
-            resp.json["message"],
-            "Folder '{}' already exists at {}".format(dir1.name, dir1),
-        )
-
-        resp = self.request(
-            path="/folder/{}/copy".format(folder_id),
-            method="POST",
-            user=self.users["sally"],
             params={"name": "new_copy"},
         )
         self.assertStatus(resp, 403)
         self.assertFalse((dir1.with_name("new_copy") / file1.name).is_file())
+
+        resp = self.request(
+            path="/folder/{}/copy".format(folder_id),
+            method="POST",
+            user=self.users["admin"],
+            params={},
+            exception=True,
+        )
+        self.assertStatus(resp, 200)
+        new_folder = resp.json
+        self.assertEqual(new_folder["name"], "source_folder (1)")
+        self.assertTrue((dir1.with_name("source_folder (1)") / file1.name).is_file())
 
         resp = self.request(
             path="/folder/{}/copy".format(folder_id),

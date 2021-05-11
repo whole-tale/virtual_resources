@@ -14,7 +14,7 @@ from girder.models.file import File
 from girder.models.folder import Folder
 from girder.models.item import Item
 
-from . import VirtualObject, validate_event
+from . import VirtualObject, validate_event, ensure_unique_path
 
 
 class VirtualItem(VirtualObject):
@@ -110,9 +110,10 @@ class VirtualItem(VirtualObject):
     @validate_event(level=AccessType.WRITE)
     def copy_item(self, event, path, root, user=None):
         self.is_file(path, root["_id"])
+        source = self.vItem(path, root)
         name = event.info["params"].get("name") or path.name
 
-        folder_id = event.info["params"].get("folderId", root["_id"])
+        folder_id = event.info["params"].get("folderId", source["folderId"])
         if str(folder_id).startswith("wtlocal:"):
             new_dirname, new_root_id = self.path_from_id(folder_id)
         else:
@@ -130,13 +131,7 @@ class VirtualItem(VirtualObject):
         else:
             new_root = root
 
-        checkName = (new_dirname / name) == path
-        n = 0
-        while checkName:
-            n += 1
-            name = "%s (%d)" % (path.name, n)
-            checkName = (new_dirname / name).exists()
-        new_path = new_dirname / name
+        new_path = ensure_unique_path(new_dirname, name)
         shutil.copy(path.as_posix(), new_path.as_posix())
         event.preventDefault().addResponse(
             Item().filter(self.vItem(new_path, new_root), user=user)
