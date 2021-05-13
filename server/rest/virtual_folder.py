@@ -10,7 +10,7 @@ from girder import events
 from girder.api import access
 from girder.api.rest import setResponseHeader, setContentDisposition
 from girder.constants import TokenScope, AccessType
-from girder.exceptions import GirderException
+from girder.exceptions import GirderException, ValidationException
 from girder.models.folder import Folder
 from girder.utility import ziputil
 
@@ -76,7 +76,12 @@ class VirtualFolder(VirtualObject):
     def create_folder(self, event, path, root, user=None):
         params = event.info["params"]
         new_path = path / params["name"]
-        new_path.mkdir()
+        try:
+            new_path.mkdir()
+        except FileExistsError:
+            raise ValidationException(
+                "A folder with that name already exists here.", "name"
+            )
         event.preventDefault().addResponse(
             Folder().filter(self.vFolder(new_path, root), user=user)
         )

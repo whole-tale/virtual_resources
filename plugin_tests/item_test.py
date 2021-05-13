@@ -103,7 +103,7 @@ class ItemOperationsTestCase(base.TestCase):
             path="/item",
             method="POST",
             user=self.users["admin"],
-            params={"parentType": "folder", "parentId": parentId, "name": "test_item"},
+            params={"folderId": parentId, "name": "test_item"},
         )
         self.assertStatusOk(resp)
         item = resp.json
@@ -367,7 +367,24 @@ class ItemOperationsTestCase(base.TestCase):
         self.assertStatusOk(resp)
         self.assertEqual(resp.json["name"], "existing.txt (1)")
 
-        self.assertStatusOk(resp)
+        item = resp.json
+        resp = self.request(
+            path="/item",
+            method="POST",
+            user=self.users["admin"],
+            params={"folderId": item["folderId"], "name": item["name"]},
+        )
+        self.assertStatus(resp, 400)
+        folder = resp.json
+        self.assertEqual(
+            resp.json,
+            {
+                "type": "validation",
+                "message": "An item with that name already exists here.",
+                "field": "name",
+            },
+        )
+
         self.assertTrue((root_path / "existing.txt (1)").is_file())
         file1.unlink()
         (root_path / "existing.txt (1)").unlink()

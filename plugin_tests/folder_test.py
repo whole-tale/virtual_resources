@@ -494,6 +494,34 @@ class FolderOperationsTestCase(base.TestCase):
             (dir1.with_name("new_copy") / "copy_within_copy" / file1.name).is_file()
         )
 
+    def test_exists_already(self):
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        some_dir = root_path / "some_folder"
+        some_dir.mkdir(parents=True)
+
+        resp = self.request(
+            path="/folder",
+            method="POST",
+            user=self.users["admin"],
+            params={
+                "parentType": "folder",
+                "parentId": self.public_folder["_id"],
+                "name": "some_folder",
+            },
+        )
+        self.assertStatus(resp, 400)
+        folder = resp.json
+        self.assertEqual(
+            resp.json,
+            {
+                "type": "validation",
+                "message": "A folder with that name already exists here.",
+                "field": "name",
+            },
+        )
+
+        some_dir.rmdir()
+
     def tearDown(self):
         Folder().remove(self.public_folder)
         Folder().remove(self.private_folder)
