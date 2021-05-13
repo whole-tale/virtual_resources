@@ -9,7 +9,7 @@ import shutil
 from girder import events
 from girder.api import access
 from girder.constants import TokenScope, AccessType
-from girder.exceptions import GirderException
+from girder.exceptions import GirderException, ValidationException
 from girder.models.file import File
 from girder.models.folder import Folder
 from girder.models.item import Item
@@ -56,8 +56,13 @@ class VirtualItem(VirtualObject):
     def create_item(self, event, path, root, user=None):
         params = event.info["params"]
         new_path = path / params["name"]
-        with new_path.open(mode="a"):
-            os.utime(new_path.as_posix())
+        try:
+            with new_path.open(mode="x"):
+                os.utime(new_path.as_posix())
+        except FileExistsError:
+            raise ValidationException(
+                "An item with that name already exists here.", "name"
+            )
         event.preventDefault().addResponse(
             Item().filter(self.vItem(new_path, root), user=user)
         )
