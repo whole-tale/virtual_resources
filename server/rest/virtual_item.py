@@ -40,10 +40,17 @@ class VirtualItem(VirtualObject):
         params = event.info["params"]
         offset = int(params.get("offset", 0))
         limit = int(params.get("limit", 50))
+        name = params.get("name")
         sort_key = params.get("sort", "lowerName")
         reverse = int(params.get("sortdir", pymongo.ASCENDING)) == pymongo.DESCENDING
 
-        items = [self.vItem(obj, root) for obj in path.iterdir() if obj.is_file()]
+        if name:
+            if (path / name).is_file():
+                items = [self.vItem(path / name, root)]
+            else:
+                items = []
+        else:
+            items = [self.vItem(obj, root) for obj in path.iterdir() if obj.is_file()]
         items = sorted(items, key=itemgetter(sort_key), reverse=reverse)
         upper_bound = limit + offset if limit > 0 else None
         response = [
