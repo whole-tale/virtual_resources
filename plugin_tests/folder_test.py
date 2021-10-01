@@ -512,7 +512,7 @@ class FolderOperationsTestCase(base.TestCase):
         self.assertStatus(resp, 400)
         folder = resp.json
         self.assertEqual(
-            resp.json,
+            folder,
             {
                 "type": "validation",
                 "message": "A folder with that name already exists here.",
@@ -521,6 +521,61 @@ class FolderOperationsTestCase(base.TestCase):
         )
 
         some_dir.rmdir()
+
+    def test_folder_listing(self):
+        root_path = pathlib.Path(self.public_folder["fsPath"])
+        some_dir = root_path / "some_folder_with_subfolders"
+        some_dir.mkdir(parents=True)
+
+        (some_dir / "subfolder1").mkdir()
+        (some_dir / "subfolder2").mkdir()
+
+        resp = self.request(
+            path="/folder",
+            method="GET",
+            user=self.users["admin"],
+            params={"parentType": "folder", "parentId": str(self.public_folder["_id"])},
+        )
+        self.assertStatusOk(resp)
+        some_dir_obj = resp.json[0]
+        self.assertEqual(some_dir_obj["name"], "some_folder_with_subfolders")
+
+        resp = self.request(
+            path="/folder",
+            method="GET",
+            user=self.users["admin"],
+            params={"parentType": "folder", "parentId": some_dir_obj["_id"]},
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(resp.json), 2)
+
+        resp = self.request(
+            path="/folder",
+            method="GET",
+            user=self.users["admin"],
+            params={
+                "parentType": "folder",
+                "parentId": some_dir_obj["_id"],
+                "name": "subfolder2",
+            },
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(resp.json), 1)
+        self.assertEqual(resp.json[0]["name"], "subfolder2")
+
+        resp = self.request(
+            path="/folder",
+            method="GET",
+            user=self.users["admin"],
+            params={
+                "parentType": "folder",
+                "parentId": some_dir_obj["_id"],
+                "name": "nope",
+            },
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(resp.json), 0)
+        shutil.rmtree(some_dir.as_posix())
 
     def tearDown(self):
         Folder().remove(self.public_folder)

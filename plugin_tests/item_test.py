@@ -119,6 +119,24 @@ class ItemOperationsTestCase(base.TestCase):
             path="/item",
             method="GET",
             user=self.users["admin"],
+            params={"parentType": "folder", "parentId": str(parentId), "name": "nope"},
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(resp.json), 0)
+
+        resp = self.request(
+            path="/item",
+            method="GET",
+            user=self.users["admin"],
+            params={"parentType": "folder", "parentId": str(parentId), "name": item["name"]},
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(resp.json), 1)
+
+        resp = self.request(
+            path="/item",
+            method="GET",
+            user=self.users["admin"],
             params={"parentType": "folder", "parentId": str(parentId)},
         )
         self.assertStatusOk(resp)
@@ -377,7 +395,7 @@ class ItemOperationsTestCase(base.TestCase):
         self.assertStatus(resp, 400)
         folder = resp.json
         self.assertEqual(
-            resp.json,
+            folder,
             {
                 "type": "validation",
                 "message": "An item with that name already exists here.",

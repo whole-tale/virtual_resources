@@ -58,12 +58,21 @@ class VirtualFolder(VirtualObject):
     @validate_event(level=AccessType.READ)
     def get_child_folders(self, event, path, root, user=None):
         params = event.info["params"]
+        name = params.get("name")
         offset = int(params.get("offset", 0))
         limit = int(params.get("limit", 50))
         sort_key = params.get("sort", "lowerName")
         reverse = int(params.get("sortdir", pymongo.ASCENDING)) == pymongo.DESCENDING
 
-        folders = [self.vFolder(obj, root) for obj in path.iterdir() if obj.is_dir()]
+        # TODO: implement "text"
+        if name:
+            if (path / name).is_dir():
+                folders = [self.vFolder(path / name, root)]
+            else:
+                folders = []
+        else:
+            folders = [self.vFolder(obj, root) for obj in path.iterdir() if obj.is_dir()]
+
         folders = sorted(folders, key=itemgetter(sort_key), reverse=reverse)
         upper_bound = limit + offset if limit > 0 else None
         response = [
