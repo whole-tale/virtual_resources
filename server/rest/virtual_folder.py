@@ -14,7 +14,7 @@ from girder.exceptions import GirderException, ValidationException
 from girder.models.folder import Folder
 from girder.utility import ziputil
 
-from . import VirtualObject, validate_event, ensure_unique_path
+from . import VirtualObject, validate_event, ensure_unique_path, bail_if_exists
 
 
 def file_stream(path, buf_size=65536):
@@ -113,18 +113,16 @@ class VirtualFolder(VirtualObject):
         parentId = params.get("parentId", source["parentId"])
 
         if parentId == source["parentId"]:
-            if name == path.name:
-                raise GirderException(
-                    "Folder '{}' already exists in {}".format(name, parentId)
-                )
-            # Just rename in place
             new_path = path.with_name(name)
+            bail_if_exists(new_path)
+            # Just rename in place
             path.rename(new_path)
         else:
             dst_path, dst_root_id = self.path_from_id(parentId)
             # Check wheter the user can write to the destination
             Folder().load(dst_root_id, user=user, level=AccessType.WRITE, exc=True)
             new_path = dst_path / name
+            bail_if_exists(new_path)
             shutil.move(
                 path.as_posix(), new_path.as_posix(), copy_function=shutil.copytree
             )

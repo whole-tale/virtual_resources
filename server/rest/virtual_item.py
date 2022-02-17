@@ -14,7 +14,7 @@ from girder.models.file import File
 from girder.models.folder import Folder
 from girder.models.item import Item
 
-from . import VirtualObject, validate_event, ensure_unique_path
+from . import VirtualObject, validate_event, ensure_unique_path, bail_if_exists
 
 
 class VirtualItem(VirtualObject):
@@ -92,11 +92,9 @@ class VirtualItem(VirtualObject):
         parentId = params.get("folderId", source["folderId"])
 
         if parentId == source["folderId"]:
-            if path.name == name:
-                new_path = path
-            else:
-                new_path = path.with_name(name)
-                path.rename(new_path)
+            new_path = path.with_name(name)
+            bail_if_exists(new_path)
+            path.rename(new_path)
         else:
             dst_path, dst_root_id = self.path_from_id(parentId)
             if not dst_path:
@@ -105,6 +103,7 @@ class VirtualItem(VirtualObject):
             Folder().load(dst_root_id, user=user, level=AccessType.WRITE, exc=True)
             self.is_dir(dst_path, dst_root_id)
             new_path = dst_path / name
+            bail_if_exists(new_path)
             shutil.move(path.as_posix(), new_path.as_posix())
 
         event.preventDefault().addResponse(

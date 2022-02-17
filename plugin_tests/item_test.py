@@ -295,15 +295,18 @@ class ItemOperationsTestCase(base.TestCase):
         folder_id = VirtualObject.generate_id(subdir, self.public_folder["_id"])
         item_id = VirtualObject.generate_id(file1, self.public_folder["_id"])
 
-        # Move with the same name (noop)
+        # Move with the same name (400)
         resp = self.request(
             path="/item/{}".format(item_id),
             method="PUT",
             user=self.users["admin"],
             params={"name": file1.name, "folderId": folder_id},
         )
-        self.assertStatusOk(resp)
-        self.assertTrue(file1.exists())
+        self.assertStatus(resp, 400)
+        self.assertEqual(
+            resp.json["message"],
+            "A folder or file with that name already exists here."
+        )
 
         # Move within the same folder
         resp = self.request(
