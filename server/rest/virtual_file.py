@@ -18,7 +18,7 @@ from girder.models.folder import Folder
 from girder.models.upload import Upload
 from girder.utility import RequestBodyStream, assetstore_utilities
 
-from . import VirtualObject, validate_event
+from . import VirtualObject, validate_event, bail_if_exists
 
 
 BUF_SIZE = 65536
@@ -104,6 +104,7 @@ class VirtualFile(VirtualObject):
     def rename_file(self, event, path, root, user=None):
         self.is_file(path, root["_id"])
         new_path = path.with_name(event.info["params"]["name"])
+        bail_if_exists(new_path)
         path.rename(new_path)
         event.preventDefault().addResponse(
             File().filter(self.vFile(new_path, root), user=user)

@@ -196,12 +196,10 @@ class FolderOperationsTestCase(base.TestCase):
             params={"name": dir1.name},
             exception=True,
         )
-        self.assertStatus(resp, 500)
+        self.assertStatus(resp, 400)
         self.assertEqual(
             resp.json["message"],
-            "Folder '{}' already exists in {}".format(
-                dir1.name, self.public_folder["_id"]
-            ),
+            "A folder or file with that name already exists here."
         )
 
         new_root_path = pathlib.Path(self.private_folder["fsPath"])

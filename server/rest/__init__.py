@@ -13,6 +13,13 @@ from girder.models.folder import Folder
 from girder.models.upload import Upload
 
 
+def bail_if_exists(path):
+    if path.exists():
+        raise ValidationException(
+            "A folder or file with that name already exists here.", "name"
+        )
+
+
 def ensure_unique_path(dirname, name):
     checkName = (dirname / name).exists()
     new_name = name
