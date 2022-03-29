@@ -50,12 +50,11 @@ class VirtualFile(VirtualObject):
     @validate_event(level=AccessType.WRITE)
     def create_file(self, event, path, root, user=None):
         params = event.info["params"]
-        self.is_dir(path, root["_id"])
-
         name = params["name"]
         parent = Folder().filter(self.vFolder(path, root), user=user)
         file_path = path / name
         try:
+            path.mkdir(parents=True, exist_ok=True)
             with file_path.open(mode="a"):
                 os.utime(file_path.as_posix())
         except PermissionError:
