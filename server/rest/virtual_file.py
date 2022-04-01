@@ -51,7 +51,6 @@ class VirtualFile(VirtualObject):
     def create_file(self, event, path, root, user=None):
         params = event.info["params"]
         name = params["name"]
-        parent = Folder().filter(self.vFolder(path, root), user=user)
         file_path = path / name
         try:
             path.mkdir(parents=True, exist_ok=True)
@@ -65,6 +64,7 @@ class VirtualFile(VirtualObject):
         except Exception:
             raise
 
+        parent = Folder().filter(self.vFolder(path, root), user=user)
         size = int(params["size"])
         chunk = None
         if size > 0 and cherrypy.request.headers.get("Content-Length"):
