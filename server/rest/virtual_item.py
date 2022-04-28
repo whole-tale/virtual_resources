@@ -64,6 +64,7 @@ class VirtualItem(VirtualObject):
         params = event.info["params"]
         new_path = path / params["name"]
         try:
+            path.mkdir(parents=True, exist_ok=True)
             with new_path.open(mode="x"):
                 os.utime(new_path.as_posix())
         except FileExistsError:
