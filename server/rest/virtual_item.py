@@ -37,6 +37,7 @@ class VirtualItem(VirtualObject):
     @access.public(scope=TokenScope.DATA_READ)
     @validate_event(level=AccessType.READ)
     def get_child_items(self, event, path, root, user=None):
+        self.is_dir(path, root["_id"])
         params = event.info["params"]
         offset = int(params.get("offset", 0))
         limit = int(params.get("limit", 50))
