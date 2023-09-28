@@ -31,10 +31,32 @@ def ensure_unique_path(dirname, name):
     return dirname / new_name
 
 
-def validate_event(level=AccessType.READ):
+def validate_event(level=AccessType.READ, validate_admin=False):
     def validation(func):
         def wrapper(self, event):
             params = event.info.get("params", {})
+            if {"isMapping", "fsPath"} & set(params) and validate_admin:
+                folder = Folder().load(event.info["id"], force=True)
+                update = False
+
+                if params.get("isMapping") is not None:
+                    update = True
+                    folder["isMapping"] = bool(params["isMapping"])
+                if params.get("fsPath") is not None:
+                    update = True
+                    folder["fsPath"] = params["fsPath"]
+
+                if update:
+                    self.requireAdmin(
+                        self.getCurrentUser(), "Must be admin to setup virtual folders."
+                    )
+                    folder = Folder().filter(Folder().save(folder), self.getCurrentUser())
+                    pathlib.Path(folder["fsPath"]).mkdir(
+                        mode=0o755, parents=True, exist_ok=True
+                    )
+                    event.preventDefault().addResponse(folder)
+                    return
+
             if "uploadId" in params:
                 upload = Upload().load(params["uploadId"])
                 try:
