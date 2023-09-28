@@ -116,8 +116,7 @@ class VirtualFile(VirtualObject):
         path.unlink()
         event.preventDefault().addResponse({"message": "Deleted file %s." % path.name})
 
-    @access.cookie
-    @access.public(scope=TokenScope.DATA_READ)
+    @access.public(scope=TokenScope.DATA_READ, cookie=True)
     @validate_event(level=AccessType.READ)
     def file_download(self, event, path, root, user=None):
         fobj = self.vFile(path, root)

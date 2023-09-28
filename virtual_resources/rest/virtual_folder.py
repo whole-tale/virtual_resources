@@ -81,7 +81,7 @@ class VirtualFolder(VirtualObject):
         event.preventDefault().addResponse(response)
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event(level=AccessType.WRITE)
+    @validate_event(level=AccessType.WRITE, validate_admin=True)
     def create_folder(self, event, path, root, user=None):
         params = event.info["params"]
         new_path = path / params["name"]
@@ -103,7 +103,7 @@ class VirtualFolder(VirtualObject):
         )
 
     @access.user(scope=TokenScope.DATA_WRITE)
-    @validate_event(level=AccessType.WRITE)
+    @validate_event(level=AccessType.WRITE, validate_admin=True)
     def rename_folder(self, event, path, root, user=None):
         self.is_dir(path, root["_id"])
         source = self.vFolder(path, root)
