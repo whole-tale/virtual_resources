@@ -1,0 +1,11 @@
+# External dependencies
+configparser==3.5.0
+coverage
+girder-worker
+girder-jobs
+pytest>=3.6
+pytest-cov>=2.6
+pytest-girder
+python-dateutil
+tox
+virtualenv

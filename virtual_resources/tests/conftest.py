@@ -1,9 +1,10 @@
 import pathlib
-import pytest
-import tempfile
 import shutil
+import tempfile
 
 from girder.constants import AccessType
+
+import pytest
 
 
 @pytest.fixture
@@ -95,7 +96,7 @@ def mapped_folder(db, public_folder):
     from girder.models.folder import Folder
 
     public_root = tempfile.mkdtemp()
-    public_folder.update(dict(fsPath=public_root, isMapping=True))
+    public_folder.update({"fsPath": public_root, "isMapping": True})
     mapped_folder = Folder().save(public_folder)
     yield mapped_folder
     mapped_folder.pop("fsPath")
@@ -109,7 +110,7 @@ def mapped_priv_folder(db, private_folder):
     from girder.models.folder import Folder
 
     private_root = tempfile.mkdtemp()
-    private_folder.update(dict(fsPath=private_root, isMapping=True))
+    private_folder.update({"fsPath": private_root, "isMapping": True})
     mapped_folder = Folder().save(private_folder)
     yield mapped_folder
     mapped_folder.pop("fsPath")

@@ -1,32 +1,27 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import json
-from operator import itemgetter
 import os
 import pathlib
 import shutil
+from operator import itemgetter
 
 from girder import events
-
 from girder.api import access
 from girder.constants import AccessType, TokenScope
-from girder.exceptions import (
-    AccessException,
-    ValidationException,
-    ResourcePathNotFound,
-    RestException,
-)
+from girder.exceptions import (AccessException, ResourcePathNotFound,
+                               RestException, ValidationException)
 from girder.models.collection import Collection
 from girder.models.folder import Folder
 from girder.models.user import User
-from girder.utility.path import lookUpToken, split, getResourcePath
 from girder.utility.model_importer import ModelImporter
+from girder.utility.path import getResourcePath, lookUpToken, split
 from girder.utility.progress import ProgressContext
 
-from . import VirtualObject, validate_event, ensure_unique_path
+from . import VirtualObject, ensure_unique_path, validate_event
 
 
-class EmptyDocument(Exception):
+class EmptyDocumentError(Exception):
     pass
 
 
@@ -48,7 +43,7 @@ class VirtualResource(VirtualObject):
 
     def _filter_resources(self, event, level=AccessType.WRITE, user=None):
         resources = json.loads(event.info["params"]["resources"])
-        remaining_resources = dict(folder=[], item=[])
+        remaining_resources = {"folder": [], "item": []}
         wt_resources = []
         for kind in resources:
             for obj_id in resources[kind]:
@@ -165,7 +160,7 @@ class VirtualResource(VirtualObject):
     @staticmethod
     def _lookup_err(msg, test=False):
         if test:
-            raise EmptyDocument
+            raise EmptyDocumentError
         else:
             raise ResourcePathNotFound(msg)
 
@@ -222,7 +217,7 @@ class VirtualResource(VirtualObject):
 
         try:
             document, model = self._get_base(pathArray, test=test)
-        except EmptyDocument:
+        except EmptyDocumentError:
             return {"model": None, "document": None}
 
         try:

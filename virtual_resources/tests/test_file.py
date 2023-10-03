@@ -3,22 +3,23 @@
 
 import os
 import pathlib
-import pytest
 import random
 import shutil
 import string
 
-from girder.settings import SettingKey
+
 from girder.models.assetstore import Assetstore
 from girder.models.setting import Setting
+from girder.settings import SettingKey
 
-from pytest_girder.assertions import assertStatusOk, assertStatus
+import pytest
+
+from pytest_girder.assertions import assertStatus, assertStatusOk
 from pytest_girder.utils import getResponseBody
 
-from virtual_resources.rest import VirtualObject as vo
+from virtual_resources.rest import VirtualObject
 
 chunk1, chunk2 = ("hello ", "world")
-chunkData = chunk1.encode("utf8") + chunk2.encode("utf8")
 
 
 def random_string(length=10):
@@ -34,7 +35,7 @@ def test_basic_file_ops(server, user, extra_user, example_mapped_folder):
     file2_contents = example_mapped_folder["file2_contents"]
 
     resp = server.request(
-        path="/file/{}".format(vo.generate_id(file2.as_posix(), mapped_folder["_id"])),
+        path="/file/{}".format(VirtualObject.generate_id(file2.as_posix(), mapped_folder["_id"])),
         method="GET",
         user=user,
     )
@@ -402,7 +403,7 @@ def test_upload_odd_cases(server, fsAssetstore, user, extra_user, mapped_priv_fo
         user=user,
         params={
             "parentType": "folder",
-            "parentId": vo.generate_id(dest_dir.as_posix(), mapped_priv_folder["_id"]),
+            "parentId": VirtualObject.generate_id(dest_dir.as_posix(), mapped_priv_folder["_id"]),
             "name": "full_body.txt",
             "size": len(chunk1),
             "mimeType": "text/plain",
