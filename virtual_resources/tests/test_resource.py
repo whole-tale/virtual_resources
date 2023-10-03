@@ -3,10 +3,13 @@
 
 import json
 import pathlib
-import pytest
 
 from girder.models.folder import Folder
-from pytest_girder.assertions import assertStatusOk, assertStatus
+
+import pytest
+
+from pytest_girder.assertions import assertStatus, assertStatusOk
+
 from virtual_resources.rest import VirtualObject
 
 
@@ -155,9 +158,9 @@ def test_lookup(server, admin, user, example_mapped_folder):
 
     mapped_folder["public"] = False
     mapped_folder = Folder().save(mapped_folder)
-    for model, lookup_path in (
-        ("folder", "/collection/test_collection/public/level0"),
-        ("item", "/collection/test_collection/public/some_file.txt"),
+    for lookup_path in (
+        "/collection/test_collection/public/level0",
+        "/collection/test_collection/public/some_file.txt",
     ):
         resp = server.request(
             path="/resource/lookup",

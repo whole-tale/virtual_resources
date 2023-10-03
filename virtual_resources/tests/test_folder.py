@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 import io
 import pathlib
-import pytest
 import shutil
 import zipfile
 
-from pytest_girder.assertions import assertStatusOk, assertStatus
+import pytest
+
+from pytest_girder.assertions import assertStatus, assertStatusOk
 from pytest_girder.utils import getResponseBody
+
 from virtual_resources.rest import VirtualObject
 
 

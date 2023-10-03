@@ -6,9 +6,9 @@ from girder.constants import AccessType
 from girder.models.folder import Folder
 from girder.plugin import GirderPlugin
 
-from .rest.virtual_item import VirtualItem
 from .rest.virtual_file import VirtualFile
 from .rest.virtual_folder import VirtualFolder
+from .rest.virtual_item import VirtualItem
 from .rest.virtual_resource import VirtualResource
 
 

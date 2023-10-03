@@ -1,25 +1,25 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import cherrypy
 import errno
 import os
 import pathlib
 import shutil
 import stat
 
+import cherrypy
+
 from girder import events
 from girder.api import access
 from girder.api.rest import setResponseHeader
 from girder.constants import AccessType, TokenScope
-from girder.exceptions import GirderException, AccessException, RestException
+from girder.exceptions import AccessException, GirderException, RestException
 from girder.models.assetstore import Assetstore
 from girder.models.file import File
 from girder.models.folder import Folder
 from girder.models.upload import Upload
 from girder.utility import RequestBodyStream, assetstore_utilities
 
-from . import VirtualObject, validate_event, bail_if_exists
-
+from . import VirtualObject, bail_if_exists, validate_event
 
 BUF_SIZE = 65536
 DEFAULT_PERMS = stat.S_IRUSR | stat.S_IWUSR

@@ -1,20 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from operator import itemgetter
 import os
 import pathlib
-import pymongo
 import shutil
+from operator import itemgetter
 
 from girder import events
 from girder.api import access
-from girder.constants import TokenScope, AccessType
+from girder.constants import AccessType, TokenScope
 from girder.exceptions import GirderException, ValidationException
 from girder.models.file import File
 from girder.models.folder import Folder
 from girder.models.item import Item
 
-from . import VirtualObject, validate_event, ensure_unique_path, bail_if_exists
+import pymongo
+
+from . import VirtualObject, bail_if_exists, ensure_unique_path, validate_event
 
 
 class VirtualItem(VirtualObject):
@@ -162,19 +163,19 @@ class VirtualItem(VirtualObject):
     def item_root_path(self, event, path, root, user=None):
         root_path = pathlib.Path(root["fsPath"])
         response = [
-            dict(type="item", object=Item().filter(self.vItem(path, root), user=user))
+            {"type": "item", "object": Item().filter(self.vItem(path, root), user=user)}
         ]
         path = path.parent
         while path != root_path:
             response.append(
-                dict(
-                    type="folder",
-                    object=Folder().filter(self.vFolder(path, root), user=user),
-                )
+                {
+                    "type": "folder",
+                    "object": Folder().filter(self.vFolder(path, root), user=user),
+                }
             )
             path = path.parent
 
-        response.append(dict(type="folder", object=Folder().filter(root, user=user)))
+        response.append({"type": "folder", "object": Folder().filter(root, user=user)})
         girder_rootpath = Folder().parentsToRoot(root, user=user)
         response += girder_rootpath[::-1]
         response.pop(0)
