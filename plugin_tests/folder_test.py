@@ -1,593 +1,453 @@
-#!/usr/bin/env python
+#!usr/bin/env python
 # -*- coding: utf-8 -*-
 import io
 import pathlib
+import pytest
 import shutil
-import tempfile
 import zipfile
 
-from tests import base
-
-from girder.constants import AccessType
-from girder.models.collection import Collection
-from girder.models.folder import Folder
-from girder.models.user import User
-
-
-def setUpModule():
-    base.enabledPlugins.append("virtual_resources")
-    base.startServer()
-
-
-def tearDownModule():
-    base.stopServer()
-
-
-class FolderOperationsTestCase(base.TestCase):
-    def setUp(self):
-        super(FolderOperationsTestCase, self).setUp()
-        users = (
-            {
-                "email": "root@dev.null",
-                "login": "admin",
-                "firstName": "Jane",
-                "lastName": "Austin",
-                "password": "secret",
-            },
-            {
-                "email": "sally@dev.null",
-                "login": "sally",
-                "firstName": "Sally",
-                "lastName": "User",
-                "password": "secret",
-            },
-            {
-                "email": "joel@dev.null",
-                "login": "joel",
-                "firstName": "Joel",
-                "lastName": "CanTDoMuch",
-                "password": "secret",
-            },
-        )
-
-        self.users = {user["login"]: User().createUser(**user) for user in users}
-
-        self.public_root = tempfile.mkdtemp()
-        self.shared_root = tempfile.mkdtemp()
-        self.private_root = tempfile.mkdtemp()
-        self.private2_root = tempfile.mkdtemp()
-
-        self.base_collection = Collection().createCollection(
-            "Virtual Resources",
-            creator=self.users["admin"],
-            public=True,
-            reuseExisting=True,
-        )
-
-        self.public_folder = Folder().createFolder(
-            self.base_collection,
-            "public",
-            parentType="collection",
-            public=True,
-            reuseExisting=True,
-        )
-        self.public_folder.update(dict(fsPath=self.public_root, isMapping=True))
-        self.public_folder = Folder().save(self.public_folder)
-
-        self.private_folder = Folder().createFolder(
-            self.base_collection,
-            "private",
-            parentType="collection",
-            public=False,
-            creator=self.users["sally"],
-            reuseExisting=True,
-        )
-        self.private_folder.update(dict(fsPath=self.private_root, isMapping=True))
-        Folder().setUserAccess(
-            self.private_folder, self.users["sally"], AccessType.WRITE
-        )
-        Folder().setUserAccess(self.private_folder, self.users["joel"], AccessType.READ)
-        self.private_folder = Folder().save(self.private_folder)
-
-        self.private_folder2 = Folder().createFolder(
-            self.base_collection,
-            "private2",
-            parentType="collection",
-            public=False,
-            creator=self.users["sally"],
-            reuseExisting=True,
-        )
-        self.private_folder2.update(dict(fsPath=self.private2_root, isMapping=True))
-        Folder().setUserAccess(
-            self.private_folder2, self.users["sally"], AccessType.WRITE
-        )
-        Folder().setUserAccess(
-            self.private_folder2, self.users["joel"], AccessType.WRITE
-        )
-        self.private_folder2 = Folder().save(self.private_folder2)
-
-        self.regular_folder = Folder().createFolder(
-            self.base_collection,
-            "regular",
-            creator=self.users["sally"],
-            parentType="collection",
-            public=True,
-            reuseExisting=True,
-        )
-
-    def test_basic_folder_ops(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        resp = self.request(
-            path="/folder",
-            method="POST",
-            user=self.users["admin"],
-            params={
-                "parentType": "folder",
-                "parentId": self.public_folder["_id"],
-                "name": "test_folder",
-            },
-        )
-        self.assertStatusOk(resp)
-        folder = resp.json
-
-        actual_folder_path = pathlib.Path(self.public_root) / folder["name"]
-        self.assertTrue(actual_folder_path.is_dir())
-
-        decoded_path, decoded_root_id = VirtualObject.path_from_id(folder["_id"])
-        self.assertEqual(decoded_path, actual_folder_path)
-        self.assertEqual(decoded_root_id, str(self.public_folder["_id"]))
-
-        resp = self.request(
-            path="/folder",
-            method="GET",
-            user=self.users["admin"],
-            params={"parentType": "folder", "parentId": str(self.public_folder["_id"])},
-        )
-        self.assertStatusOk(resp)
-        get_folders = resp.json
-        self.assertEqual(len(get_folders), 1)
-        self.assertEqual(get_folders[0], folder)
-
-        resp = self.request(
-            path="/folder/{_id}".format(**folder),
-            method="GET",
-            user=self.users["admin"],
-        )
-        self.assertStatusOk(resp)
-        self.assertEqual(resp.json, get_folders[0])
-
-        resp = self.request(
-            path="/folder/{_id}".format(**folder),
-            method="PUT",
-            user=self.users["admin"],
-            params={"name": "renamed"},
-        )
-        self.assertStatusOk(resp)
-        folder = resp.json
-        self.assertFalse(actual_folder_path.exists())
-        actual_folder_path = pathlib.Path(self.public_root) / folder["name"]
-        self.assertTrue(actual_folder_path.is_dir())
-
-        resp = self.request(
-            path="/folder/{_id}".format(**folder),
-            method="DELETE",
-            user=self.users["admin"],
-        )
-        self.assertStatusOk(resp)
-        self.assertFalse(actual_folder_path.exists())
-
-    def test_folder_move(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        dir1 = root_path / "some_dir"
-        dir1.mkdir()
-        file1 = dir1 / "some_file"
-        with file1.open(mode="wb") as fp:
-            fp.write(b"\n")
-
-        folder_id = VirtualObject.generate_id(dir1, self.public_folder["_id"])
-
-        resp = self.request(
-            path="/folder/{}".format(folder_id),
-            method="PUT",
-            user=self.users["admin"],
-            params={"name": dir1.name},
-            exception=True,
-        )
-        self.assertStatus(resp, 400)
-        self.assertEqual(
-            resp.json["message"],
-            "A folder or file with that name already exists here."
-        )
-
-        new_root_path = pathlib.Path(self.private_folder["fsPath"])
-        dir2 = new_root_path / "level1"
-        dir2.mkdir()
-        new_folder_id = VirtualObject.generate_id(dir2, self.private_folder["_id"])
-
-        resp = self.request(
-            path="/folder/{}".format(folder_id),
-            method="PUT",
-            user=self.users["admin"],
-            params={"parentId": new_folder_id, "parentType": "folder"},
-        )
-        self.assertStatusOk(resp)
-        self.assertFalse(dir1.exists())
-        self.assertTrue((dir2 / dir1.name).exists())
-        new_file = dir2 / dir1.name / file1.name
-        self.assertTrue(new_file.exists())
-        new_file.unlink()
-        (dir2 / dir1.name).rmdir()
-        dir2.rmdir()
-
-    def test_move_to_root(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        dir1 = root_path / "some_dir"
-        dir1.mkdir()
-        file1 = dir1 / "some_file"
-        with file1.open(mode="wb") as fp:
-            fp.write(b"\n")
-        folder_id = VirtualObject.generate_id(dir1, self.public_folder["_id"])
-
-        resp = self.request(
-            path="/folder/{}".format(folder_id),
-            method="PUT",
-            user=self.users["admin"],
-            params={"parentId": self.private_folder["_id"], "parentType": "folder"},
-        )
-        self.assertStatusOk(resp)
-        self.assertFalse(dir1.exists())
-
-        root_path = pathlib.Path(self.private_folder["fsPath"])
-        dir1 = root_path / "some_dir"
-        file1 = dir1 / "some_file"
-        self.assertTrue(dir1.exists())
-        self.assertTrue(file1.exists())
-        file1.unlink()
-        dir1.rmdir()
-
-    def test_move_acls(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        root_path = pathlib.Path(self.private_folder["fsPath"])
-        dir1 = root_path / "some_dir"
-        dir1.mkdir()
-
-        folder_id = VirtualObject.generate_id(dir1, self.private_folder["_id"])
-
-        resp = self.request(
-            path="/folder/{}".format(folder_id),
-            method="PUT",
-            user=self.users["joel"],
-            params={"parentId": self.private_folder2["_id"], "parentType": "folder"},
-        )
-        self.assertStatus(resp, 403)
-
-        resp = self.request(
-            path="/folder/{}".format(folder_id),
-            method="PUT",
-            user=self.users["sally"],
-            params={"parentId": self.private_folder2["_id"], "parentType": "folder"},
-        )
-        self.assertStatusOk(resp)
-
-        self.assertFalse(dir1.exists())
-        root_path = pathlib.Path(self.private_folder2["fsPath"])
-        dir1 = root_path / "some_dir"
-        self.assertTrue(dir1.exists())
-        folder_id = VirtualObject.generate_id(dir1, self.private_folder2["_id"])
-
-        resp = self.request(
-            path="/folder/{}".format(folder_id),
-            method="PUT",
-            user=self.users["joel"],
-            params={"parentId": self.private_folder["_id"], "parentType": "folder"},
-        )
-        self.assertStatus(resp, 403)
-
-        dir1.rmdir()
-
-    def test_folder_details(self):
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        dir1 = root_path / "some_dir"
-        dir1.mkdir()
-        file1 = root_path / "some_file"
-        with file1.open(mode="wb") as fp:
-            fp.write(b"\n")
-
-        resp = self.request(
-            path="/folder/{_id}/details".format(**self.public_folder),
-            method="GET",
-            user=self.users["admin"],
-        )
-        self.assertStatusOk(resp)
-        self.assertEqual(resp.json, {"nFolders": 1, "nItems": 1})
-
-        file1.unlink()
-        dir1.rmdir()
-
-    def test_folder_rootpath(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        nested_dir = root_path / "level0" / "level1" / "level2"
-        nested_dir.mkdir(parents=True)
-
-        folder_id = VirtualObject.generate_id(nested_dir, self.public_folder["_id"])
-        resp = self.request(
-            path="/folder/{}/rootpath".format(folder_id),
-            method="GET",
-            user=self.users["admin"],
-        )
-        self.assertStatusOk(resp)
-        self.assertEqual(len(resp.json), 4)
-        rootpath = resp.json
-        self.assertEqual(rootpath[0]["type"], "collection")
-        self.assertEqual(rootpath[0]["object"]["_id"], str(self.base_collection["_id"]))
-        self.assertEqual(rootpath[1]["type"], "folder")
-        self.assertEqual(rootpath[1]["object"]["_id"], str(self.public_folder["_id"]))
-        self.assertEqual(rootpath[2]["type"], "folder")
-        self.assertEqual(rootpath[2]["object"]["name"], "level0")
-        self.assertEqual(rootpath[3]["type"], "folder")
-        self.assertEqual(rootpath[3]["object"]["name"], "level1")
-
-        shutil.rmtree((root_path / "level0").as_posix())
-
-    def test_folder_delete_contents(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        nested_dir = root_path / "lone_survivor"
-        nested_dir.mkdir(parents=True)
-        folder_id = VirtualObject.generate_id(nested_dir, self.public_folder["_id"])
-
-        dir1 = nested_dir / "subfolder"
-        dir1.mkdir()
-        file1 = dir1 / "some_file.txt"
-        with file1.open(mode="wb") as fp:
-            fp.write(b"file1\n")
-        file2 = nested_dir / "other_file.txt"
-        with file2.open(mode="wb") as fp:
-            fp.write(b"file2\n")
-        self.assertEqual(len(list(nested_dir.iterdir())), 2)
-
-        resp = self.request(
-            path="/folder/{}/contents".format(folder_id),
-            method="DELETE",
-            user=self.users["admin"],
-        )
-        self.assertStatusOk(resp)
-        self.assertEqual(len(list(nested_dir.iterdir())), 0)
-        nested_dir.rmdir()
-
-    def test_folder_download(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        nested_dir = root_path / "lone_survivor"
-        nested_dir.mkdir(parents=True)
-        folder_id = VirtualObject.generate_id(nested_dir, self.public_folder["_id"])
-
-        dir1 = nested_dir / "subfolder"
-        dir1.mkdir()
-        file1 = dir1 / "some_file.txt"
-        with file1.open(mode="wb") as fp:
-            fp.write(b"file1\n")
-        file2 = nested_dir / "other_file.txt"
-        with file2.open(mode="wb") as fp:
-            fp.write(b"file2\n")
-        self.assertEqual(len(list(nested_dir.iterdir())), 2)
-
-        resp = self.request(
-            path="/folder/{}/download".format(folder_id),
-            method="GET",
-            user=self.users["admin"],
-            isJson=False,
-        )
-        self.assertStatusOk(resp)
-        with zipfile.ZipFile(io.BytesIO(self.getBody(resp, text=False)), "r") as fp:
-            self.assertEqual(
-                sorted(fp.namelist()), ["other_file.txt", "subfolder/some_file.txt"]
-            )
-            # TODO should probably check the content too...
-
-    def test_folder_copy(self):
-        from girder.plugins.virtual_resources.rest import VirtualObject
-
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        dir1 = root_path / "source_folder"
-        dir1.mkdir(parents=True)
-        folder_id = VirtualObject.generate_id(dir1, self.public_folder["_id"])
-        file1 = dir1 / "file.dat"
-        with file1.open(mode="wb") as fp:
-            fp.write(b"file1\n")
-
-        resp = self.request(
-            path="/folder/{}/copy".format(self.public_folder["_id"]),
-            method="POST",
-            user=self.users["sally"],
-            params={"name": "new_copy"},
-            exception=True,
-        )
-        self.assertStatus(resp, 500)
-        self.assertEqual(resp.json["message"], "Copying mappings is not allowed.")
-
-        resp = self.request(
-            path="/folder/{}/copy".format(folder_id),
-            method="POST",
-            user=self.users["joel"],
-            params={
-                "name": "new_copy",
-                "parentId": str(self.regular_folder["_id"]),
-                "parentType": "folder",
-            },
-        )
-        self.assertStatus(resp, 403)
-
-        resp = self.request(
-            path="/folder/{}/copy".format(folder_id),
-            method="POST",
-            user=self.users["sally"],
-            params={
-                "name": "new_copy",
-                "parentId": str(self.regular_folder["_id"]),
-                "parentType": "folder",
-            },
-            exception=True,
-        )
-        self.assertStatus(resp, 500)
-        self.assertEqual(
-            resp.json["message"],
-            "Folder {} is not a mapping.".format(self.regular_folder["_id"]),
-        )
-
-        resp = self.request(
-            path="/folder/{}/copy".format(folder_id),
-            method="POST",
-            user=self.users["sally"],
-            params={"name": "new_copy"},
-        )
-        self.assertStatus(resp, 403)
-        self.assertFalse((dir1.with_name("new_copy") / file1.name).is_file())
-
-        resp = self.request(
-            path="/folder/{}/copy".format(folder_id),
-            method="POST",
-            user=self.users["admin"],
-            params={},
-            exception=True,
-        )
-        self.assertStatus(resp, 200)
-        new_folder = resp.json
-        self.assertEqual(new_folder["name"], "source_folder (1)")
-        self.assertTrue((dir1.with_name("source_folder (1)") / file1.name).is_file())
-
-        resp = self.request(
-            path="/folder/{}/copy".format(folder_id),
-            method="POST",
-            user=self.users["admin"],
-            params={"name": "new_copy"},
-        )
-        self.assertStatusOk(resp)
-        new_folder = resp.json
-        self.assertEqual(new_folder["name"], "new_copy")
-        self.assertTrue((dir1.with_name("new_copy") / file1.name).is_file())
-
-        resp = self.request(
-            path="/folder/{}/copy".format(folder_id),
-            method="POST",
-            user=self.users["admin"],
-            params={
-                "name": "copy_within_copy",
-                "parentId": new_folder["_id"],
-                "parentType": "folder",
-            },
-        )
-        self.assertStatusOk(resp)
-        self.assertTrue(
-            (dir1.with_name("new_copy") / "copy_within_copy" / file1.name).is_file()
-        )
-
-    def test_exists_already(self):
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        some_dir = root_path / "some_folder"
-        some_dir.mkdir(parents=True)
-
-        resp = self.request(
-            path="/folder",
-            method="POST",
-            user=self.users["admin"],
-            params={
-                "parentType": "folder",
-                "parentId": self.public_folder["_id"],
-                "name": "some_folder",
-            },
-        )
-        self.assertStatus(resp, 400)
-        folder = resp.json
-        self.assertEqual(
-            folder,
-            {
-                "type": "validation",
-                "message": "A folder with that name already exists here.",
-                "field": "name",
-            },
-        )
-
-        some_dir.rmdir()
-
-    def test_folder_listing(self):
-        root_path = pathlib.Path(self.public_folder["fsPath"])
-        some_dir = root_path / "some_folder_with_subfolders"
-        some_dir.mkdir(parents=True)
-
-        (some_dir / "subfolder1").mkdir()
-        (some_dir / "subfolder2").mkdir()
-
-        resp = self.request(
-            path="/folder",
-            method="GET",
-            user=self.users["admin"],
-            params={"parentType": "folder", "parentId": str(self.public_folder["_id"])},
-        )
-        self.assertStatusOk(resp)
-        some_dir_obj = resp.json[0]
-        self.assertEqual(some_dir_obj["name"], "some_folder_with_subfolders")
-
-        resp = self.request(
-            path="/folder",
-            method="GET",
-            user=self.users["admin"],
-            params={"parentType": "folder", "parentId": some_dir_obj["_id"]},
-        )
-        self.assertStatusOk(resp)
-        self.assertEqual(len(resp.json), 2)
-
-        resp = self.request(
-            path="/folder",
-            method="GET",
-            user=self.users["admin"],
-            params={
-                "parentType": "folder",
-                "parentId": some_dir_obj["_id"],
-                "name": "subfolder2",
-            },
-        )
-        self.assertStatusOk(resp)
-        self.assertEqual(len(resp.json), 1)
-        self.assertEqual(resp.json[0]["name"], "subfolder2")
-
-        resp = self.request(
-            path="/folder",
-            method="GET",
-            user=self.users["admin"],
-            params={
-                "parentType": "folder",
-                "parentId": some_dir_obj["_id"],
-                "name": "nope",
-            },
-        )
-        self.assertStatusOk(resp)
-        self.assertEqual(len(resp.json), 0)
-        shutil.rmtree(some_dir.as_posix())
-
-    def tearDown(self):
-        Folder().remove(self.public_folder)
-        Folder().remove(self.private_folder)
-        Folder().remove(self.private_folder2)
-        Folder().remove(self.regular_folder)
-        Collection().remove(self.base_collection)
-        for user in self.users.values():
-            User().remove(user)
-        for root in (
-            self.public_root,
-            self.shared_root,
-            self.private_root,
-            self.private2_root,
-        ):
-            shutil.rmtree(root)
-        super(FolderOperationsTestCase, self).tearDown()
+from pytest_girder.assertions import assertStatusOk, assertStatus
+from pytest_girder.utils import getResponseBody
+from virtual_resources.rest import VirtualObject
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_basic_folder_ops(server, user, mapped_folder):
+    public_folder = mapped_folder
+    public_root = mapped_folder["fsPath"]
+    resp = server.request(
+        path="/folder",
+        method="POST",
+        user=user,
+        params={
+            "parentType": "folder",
+            "parentId": public_folder["_id"],
+            "name": "test_folder",
+        },
+    )
+    assertStatusOk(resp)
+    folder = resp.json
+
+    actual_folder_path = pathlib.Path(public_root) / folder["name"]
+    assert actual_folder_path.is_dir()
+
+    decoded_path, decoded_root_id = VirtualObject.path_from_id(folder["_id"])
+    assert decoded_path == actual_folder_path
+    assert decoded_root_id == str(public_folder["_id"])
+
+    resp = server.request(
+        path="/folder",
+        method="GET",
+        user=user,
+        params={"parentType": "folder", "parentId": str(public_folder["_id"])},
+    )
+    assertStatusOk(resp)
+    get_folders = resp.json
+    assert len(get_folders) == 1
+    assert get_folders[0] == folder
+
+    resp = server.request(
+        path="/folder/{_id}".format(**folder),
+        method="GET",
+        user=user,
+    )
+    assertStatusOk(resp)
+    assert resp.json == get_folders[0]
+
+    resp = server.request(
+        path="/folder/{_id}".format(**folder),
+        method="PUT",
+        user=user,
+        params={"name": "renamed"},
+    )
+    assertStatusOk(resp)
+    folder = resp.json
+    assert not actual_folder_path.exists()
+    actual_folder_path = pathlib.Path(public_root) / folder["name"]
+    assert actual_folder_path.is_dir()
+
+    resp = server.request(
+        path="/folder/{_id}".format(**folder),
+        method="DELETE",
+        user=user,
+    )
+    assertStatusOk(resp)
+    assert not actual_folder_path.exists()
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_folder_move(server, user, mapped_folder, mapped_priv_folder):
+    root_path = pathlib.Path(mapped_folder["fsPath"])
+    dir1 = root_path / "some_dir"
+    dir1.mkdir()
+    file1 = dir1 / "some_file"
+    with file1.open(mode="wb") as fp:
+        fp.write(b"\n")
+
+    folder_id = VirtualObject.generate_id(dir1, mapped_folder["_id"])
+
+    resp = server.request(
+        path="/folder/{}".format(folder_id),
+        method="PUT",
+        user=user,
+        params={"name": dir1.name},
+        exception=True,
+    )
+    assertStatus(resp, 400)
+    assert (
+        resp.json["message"] == "A folder or file with that name already exists here."
+    )
+
+    new_root_path = pathlib.Path(mapped_priv_folder["fsPath"])
+    dir2 = new_root_path / "level1"
+    dir2.mkdir()
+    new_folder_id = VirtualObject.generate_id(dir2, mapped_priv_folder["_id"])
+
+    resp = server.request(
+        path="/folder/{}".format(folder_id),
+        method="PUT",
+        user=user,
+        params={"parentId": new_folder_id, "parentType": "folder"},
+    )
+    assertStatusOk(resp)
+    assert not dir1.exists()
+    assert (dir2 / dir1.name).exists()
+    new_file = dir2 / dir1.name / file1.name
+    assert new_file.exists()
+    new_file.unlink()
+    (dir2 / dir1.name).rmdir()
+    dir2.rmdir()
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_move_to_root(server, user, mapped_folder, mapped_priv_folder):
+    public_folder = mapped_folder
+    root_path = pathlib.Path(public_folder["fsPath"])
+    dir1 = root_path / "some_dir"
+    dir1.mkdir()
+    file1 = dir1 / "some_file"
+    with file1.open(mode="wb") as fp:
+        fp.write(b"\n")
+    folder_id = VirtualObject.generate_id(dir1, public_folder["_id"])
+
+    resp = server.request(
+        path="/folder/{}".format(folder_id),
+        method="PUT",
+        user=user,
+        params={"parentId": mapped_priv_folder["_id"], "parentType": "folder"},
+    )
+    assertStatusOk(resp)
+    assert not dir1.exists()
+
+    root_path = pathlib.Path(mapped_priv_folder["fsPath"])
+    dir1 = root_path / "some_dir"
+    file1 = dir1 / "some_file"
+    assert dir1.exists()
+    assert file1.exists()
+    file1.unlink()
+    dir1.rmdir()
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_move_acls(server, user, extra_user, mapped_folder, mapped_priv_folder):
+    root_path = pathlib.Path(mapped_folder["fsPath"])
+    dir1 = root_path / "some_dir"
+    dir1.mkdir()
+
+    folder_id = VirtualObject.generate_id(dir1, mapped_folder["_id"])
+
+    resp = server.request(
+        path="/folder/{}".format(folder_id),
+        method="PUT",
+        user=extra_user,
+        params={"parentId": mapped_priv_folder["_id"], "parentType": "folder"},
+    )
+    assertStatus(resp, 403)
+
+    resp = server.request(
+        path="/folder/{}".format(folder_id),
+        method="PUT",
+        user=user,
+        params={"parentId": mapped_priv_folder["_id"], "parentType": "folder"},
+    )
+    assertStatusOk(resp)
+
+    assert not dir1.exists()
+    root_path = pathlib.Path(mapped_priv_folder["fsPath"])
+    dir1 = root_path / "some_dir"
+    assert dir1.exists()
+    folder_id = VirtualObject.generate_id(dir1, mapped_priv_folder["_id"])
+
+    resp = server.request(
+        path="/folder/{}".format(folder_id),
+        method="PUT",
+        user=extra_user,
+        params={"parentId": mapped_folder["_id"], "parentType": "folder"},
+    )
+    assertStatus(resp, 403)
+
+    dir1.rmdir()
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_folder_details(server, user, example_mapped_folder):
+    resp = server.request(
+        path="/folder/{_id}/details".format(**example_mapped_folder["girder_root"]),
+        method="GET",
+        user=user,
+    )
+    assertStatusOk(resp)
+    assert resp.json == {"nFolders": 1, "nItems": 1}
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_folder_rootpath(server, user, mapped_folder):
+    root_path = pathlib.Path(mapped_folder["fsPath"])
+    nested_dir = root_path / "level0" / "level1" / "level2"
+    nested_dir.mkdir(parents=True)
+
+    folder_id = VirtualObject.generate_id(nested_dir, mapped_folder["_id"])
+    resp = server.request(
+        path="/folder/{}/rootpath".format(folder_id),
+        method="GET",
+        user=user,
+    )
+    assertStatusOk(resp)
+    assert len(resp.json) == 4
+    rootpath = resp.json
+    assert rootpath[0]["type"] == "collection"
+    assert rootpath[0]["object"]["_id"] == str(mapped_folder["parentId"])
+    assert rootpath[1]["type"] == "folder"
+    assert rootpath[1]["object"]["_id"] == str(mapped_folder["_id"])
+    assert rootpath[2]["type"] == "folder"
+    assert rootpath[2]["object"]["name"] == "level0"
+    assert rootpath[3]["type"] == "folder"
+    assert rootpath[3]["object"]["name"] == "level1"
+
+    shutil.rmtree((root_path / "level0").as_posix())
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_folder_delete_contents(server, user, mapped_folder):
+    root_path = pathlib.Path(mapped_folder["fsPath"])
+    nested_dir = root_path / "lone_survivor"
+    nested_dir.mkdir(parents=True)
+    folder_id = VirtualObject.generate_id(nested_dir, mapped_folder["_id"])
+
+    dir1 = nested_dir / "subfolder"
+    dir1.mkdir()
+    file1 = dir1 / "some_file.txt"
+    with file1.open(mode="wb") as fp:
+        fp.write(b"file1\n")
+    file2 = nested_dir / "other_file.txt"
+    with file2.open(mode="wb") as fp:
+        fp.write(b"file2\n")
+    assert len(list(nested_dir.iterdir())) == 2
+
+    resp = server.request(
+        path="/folder/{}/contents".format(folder_id),
+        method="DELETE",
+        user=user,
+    )
+    assertStatusOk(resp)
+    assert len(list(nested_dir.iterdir())) == 0
+    nested_dir.rmdir()
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_folder_download(server, user, mapped_folder):
+    root_path = pathlib.Path(mapped_folder["fsPath"])
+    nested_dir = root_path / "lone_survivor"
+    nested_dir.mkdir(parents=True)
+    folder_id = VirtualObject.generate_id(nested_dir, mapped_folder["_id"])
+
+    dir1 = nested_dir / "subfolder"
+    dir1.mkdir()
+    file1 = dir1 / "some_file.txt"
+    with file1.open(mode="wb") as fp:
+        fp.write(b"file1\n")
+    file2 = nested_dir / "other_file.txt"
+    with file2.open(mode="wb") as fp:
+        fp.write(b"file2\n")
+    assert len(list(nested_dir.iterdir())) == 2
+
+    resp = server.request(
+        path="/folder/{}/download".format(folder_id),
+        method="GET",
+        user=user,
+        isJson=False,
+    )
+    assertStatusOk(resp)
+    with zipfile.ZipFile(io.BytesIO(getResponseBody(resp, text=False)), "r") as fp:
+        assert sorted(fp.namelist()) == ["other_file.txt", "subfolder/some_file.txt"]
+        # TODO should probably check the content too...
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_folder_copy(server, user, private_folder, mapped_folder, extra_user):
+    root_path = pathlib.Path(mapped_folder["fsPath"])
+    dir1 = root_path / "source_folder"
+    dir1.mkdir(parents=True)
+    folder_id = VirtualObject.generate_id(dir1, mapped_folder["_id"])
+    file1 = dir1 / "file.dat"
+    with file1.open(mode="wb") as fp:
+        fp.write(b"file1\n")
+
+    resp = server.request(
+        path="/folder/{}/copy".format(mapped_folder["_id"]),
+        method="POST",
+        user=user,
+        params={"name": "new_copy"},
+        exception=True,
+    )
+    assertStatus(resp, 500)
+    assert resp.json["message"] == "Copying mappings is not allowed."
+
+    resp = server.request(
+        path="/folder/{}/copy".format(folder_id),
+        method="POST",
+        user=extra_user,
+        params={
+            "name": "new_copy",
+            "parentId": str(private_folder["_id"]),
+            "parentType": "folder",
+        },
+    )
+    assertStatus(resp, 403)
+
+    resp = server.request(
+        path="/folder/{}/copy".format(folder_id),
+        method="POST",
+        user=user,
+        params={
+            "name": "new_copy",
+            "parentId": str(private_folder["_id"]),
+            "parentType": "folder",
+        },
+        exception=True,
+    )
+    assertStatus(resp, 500)
+    assert resp.json["message"] == "Folder {} is not a mapping.".format(
+        private_folder["_id"]
+    )
+
+    resp = server.request(
+        path="/folder/{}/copy".format(folder_id),
+        method="POST",
+        user=user,
+        params={"name": "new_copy"},
+    )
+    assertStatus(resp, 200)
+    assert (dir1.with_name("new_copy") / file1.name).is_file()
+
+    resp = server.request(
+        path="/folder/{}/copy".format(folder_id),
+        method="POST",
+        user=user,
+        params={},
+        exception=True,
+    )
+    assertStatus(resp, 200)
+    new_folder = resp.json
+    assert new_folder["name"] == "source_folder (1)"
+    assert (dir1.with_name("source_folder (1)") / file1.name).is_file()
+
+    resp = server.request(
+        path="/folder/{}/copy".format(folder_id),
+        method="POST",
+        user=user,
+        params={
+            "name": "copy_within_copy",
+            "parentId": new_folder["_id"],
+            "parentType": "folder",
+        },
+    )
+    assertStatusOk(resp)
+    assert (
+        dir1.with_name("source_folder (1)") / "copy_within_copy" / file1.name
+    ).is_file()
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_exists_already(server, user, mapped_folder):
+    public_folder = mapped_folder
+    root_path = pathlib.Path(public_folder["fsPath"])
+    some_dir = root_path / "some_folder"
+    some_dir.mkdir(parents=True)
+
+    resp = server.request(
+        path="/folder",
+        method="POST",
+        user=user,
+        params={
+            "parentType": "folder",
+            "parentId": public_folder["_id"],
+            "name": "some_folder",
+        },
+    )
+    assertStatus(resp, 400)
+    folder = resp.json
+    assert folder == {
+        "type": "validation",
+        "message": "A folder with that name already exists here.",
+        "field": "name",
+    }
+    some_dir.rmdir()
+
+
+@pytest.mark.plugin("virtual_resources")
+def test_folder_listing(server, user, mapped_folder):
+    public_folder = mapped_folder
+    root_path = pathlib.Path(public_folder["fsPath"])
+    some_dir = root_path / "some_folder_with_subfolders"
+    some_dir.mkdir(parents=True)
+
+    (some_dir / "subfolder1").mkdir()
+    (some_dir / "subfolder2").mkdir()
+
+    resp = server.request(
+        path="/folder",
+        method="GET",
+        user=user,
+        params={"parentType": "folder", "parentId": str(public_folder["_id"])},
+    )
+    assertStatusOk(resp)
+    some_dir_obj = resp.json[0]
+    assert some_dir_obj["name"] == "some_folder_with_subfolders"
+
+    resp = server.request(
+        path="/folder",
+        method="GET",
+        user=user,
+        params={"parentType": "folder", "parentId": some_dir_obj["_id"]},
+    )
+    assertStatusOk(resp)
+    assert len(resp.json) == 2
+
+    resp = server.request(
+        path="/folder",
+        method="GET",
+        user=user,
+        params={
+            "parentType": "folder",
+            "parentId": some_dir_obj["_id"],
+            "name": "subfolder2",
+        },
+    )
+    assertStatusOk(resp)
+    assert len(resp.json) == 1
+    assert resp.json[0]["name"] == "subfolder2"
+
+    resp = server.request(
+        path="/folder",
+        method="GET",
+        user=user,
+        params={
+            "parentType": "folder",
+            "parentId": some_dir_obj["_id"],
+            "name": "nope",
+        },
+    )
+    assertStatusOk(resp)
+    assert len(resp.json) == 0
+    shutil.rmtree(some_dir.as_posix())

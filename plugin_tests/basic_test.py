@@ -4,13 +4,9 @@
 import pathlib
 import pytest
 import random
-import shutil
 import string
-import tempfile
 
 from girder.exceptions import ValidationException
-from girder.models.collection import Collection
-from girder.models.folder import Folder
 from pytest_girder.assertions import assertStatusOk, assertStatus
 
 chunk1, chunk2 = ("hello ", "world")
@@ -21,46 +17,6 @@ def random_string(length=10):
     """Generate a random string of fixed length."""
     letters = string.ascii_lowercase
     return "".join(random.choice(letters) for i in range(length))
-
-
-@pytest.fixture
-def public_collection(db, user):
-    public_collection = Collection().createCollection(
-        "test_collection",
-        creator=user,
-        public=True,
-        reuseExisting=True,
-    )
-    yield public_collection
-    Collection().remove(public_collection)
-
-
-@pytest.fixture
-def public_folder(db, user, public_collection):
-    public_root = tempfile.mkdtemp()
-    public_folder = Folder().createFolder(
-        public_collection,
-        "public",
-        creator=user,
-        parentType="collection",
-        public=True,
-        reuseExisting=True,
-    )
-    public_folder.update(dict(fsPath=public_root, isMapping=True))
-    public_folder = Folder().save(public_folder)
-    yield public_folder
-    Folder().remove(public_folder)
-
-
-@pytest.fixture
-def mapped_folder(db, public_folder):
-    public_root = tempfile.mkdtemp()
-    public_folder.update(dict(fsPath=public_root, isMapping=True))
-    mapped_folder = Folder().save(public_folder)
-    yield mapped_folder
-    mapped_folder.pop("fsPath")
-    mapped_folder.pop("isMapping")
-    shutil.rmtree(public_root)
 
 
 def test_vo_methods(mapped_folder):
