@@ -1,0 +1,44 @@
+name: Testing and Linting
+
+on:
+  push:
+    branches:
+      - main
+      - 3.x-port
+  pull_request:
+  workflow_dispatch:
+
+defaults:    
+  run:    
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    services:
+      mongodb:
+        image: mongo:3.6
+        ports:
+          - 27017:27017
+    steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Checkout repo
+      uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install tox
+    - name: Run Linter
+      run: tox -e lint -- virtual_resources
+    - name: Run Tests with coverage
+      run: tox -e pytest
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
