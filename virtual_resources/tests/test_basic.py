@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import pathlib
-import random
-import string
 
 from girder.exceptions import ValidationException
 
@@ -13,12 +11,6 @@ from pytest_girder.assertions import assertStatus, assertStatusOk
 
 
 chunk1, chunk2 = ("hello ", "world")
-
-
-def random_string(length=10):
-    """Generate a random string of fixed length."""
-    letters = string.ascii_lowercase
-    return "".join(random.choice(letters) for i in range(length))
 
 
 def test_vo_methods(mapped_folder):

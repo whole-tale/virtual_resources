@@ -3,29 +3,18 @@
 
 import os
 import pathlib
-import random
 import shutil
-import string
 
-
+import pytest
 from girder.models.assetstore import Assetstore
 from girder.models.setting import Setting
 from girder.settings import SettingKey
-
-import pytest
-
 from pytest_girder.assertions import assertStatus, assertStatusOk
 from pytest_girder.utils import getResponseBody
 
 from virtual_resources.rest import VirtualObject
 
 chunk1, chunk2 = ("hello ", "world")
-
-
-def random_string(length=10):
-    """Generate a random string of fixed length."""
-    letters = string.ascii_lowercase
-    return "".join(random.choice(letters) for i in range(length))
 
 
 @pytest.mark.plugin("virtual_resources")
