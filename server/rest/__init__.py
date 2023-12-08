@@ -37,8 +37,12 @@ def validate_event(level=AccessType.READ):
             params = event.info.get("params", {})
             if "uploadId" in params:
                 upload = Upload().load(params["uploadId"])
-                parent_id = str(upload["parentId"])
-                parent_type = upload["parentType"]
+                try:
+                    parent_id = str(upload["parentId"])
+                    parent_type = upload["parentType"]
+                except KeyError:
+                    parent_id = str(upload["fileId"])
+                    parent_type = None
             else:
                 parent_id = params.get("parentId")
                 parent_type = params.get("parentType") or "folder"
