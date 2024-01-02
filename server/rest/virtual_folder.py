@@ -53,6 +53,7 @@ class VirtualFolder(VirtualObject):
         events.bind("rest.get.folder/:id/download.before", name, self.download_folder)
         # PUT/DELETE /folder/:id/metadata -- not needed
         events.bind("rest.get.folder/:id/rootpath.before", name, self.folder_root_path)
+        events.bind("rest.post.folder/recursive.before", name, self.create_folder_recursive)
 
     @access.public(scope=TokenScope.DATA_READ)
     @validate_event(level=AccessType.READ)
@@ -242,3 +243,13 @@ class VirtualFolder(VirtualObject):
         response += girder_rootpath[::-1]
         response.pop(0)
         event.preventDefault().addResponse(response[::-1])
+
+    @access.user(scope=TokenScope.DATA_WRITE)
+    @validate_event(level=AccessType.WRITE)
+    def create_folder_recursive(self, event, path, root, user=None):
+        self.is_dir(path, root["_id"])
+        new_folder = path / event.info["params"]["path"]
+        new_folder.mkdir(parents=True, exist_ok=True)
+        event.preventDefault().addResponse(
+            Folder().filter(self.vFolder(new_folder, root), user=user)
+        )
