@@ -1,13 +1,15 @@
 {
-    "name": "@girder/virtual-resources",   // The name of your plugin
+    "name": "@girder/virtual-resources",
     "version": "1.0.0",
+    "description": "A Girder plugin that maps Girder Folders to physical directories.",
+    "license": "BSD-3-Clause",
     "peerDepencencies": {
-        "@girder/core": "*"               // Your plugin will likely depend on girder/core.
+        "@girder/core": "*"
     },
-    "dependencies": {},                   // Any other dependencies of the client code
+    "dependencies": {},
     "girderPlugin": {
-        "name": "virtual_resources",      // The entrypoint name defined in setup.py.
-        "main": "./main.js"               // The plugin client entrypoint containing code that is executed on load.
-        "dependencies": []                // If you plugin web_client requires another plugin
+        "name": "virtual_resources",
+        "main": "./main.js",
+        "dependencies": []
     }
 }
