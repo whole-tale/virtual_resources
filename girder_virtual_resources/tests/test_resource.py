@@ -10,10 +10,10 @@ import pytest
 
 from pytest_girder.assertions import assertStatus, assertStatusOk
 
-from virtual_resources.rest import VirtualObject
+from girder_virtual_resources.rest import VirtualObject
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_resource_copy(server, admin, example_mapped_folder):
     mapped_folder = example_mapped_folder["girder_root"]
     nested_dir = example_mapped_folder["nested_dir"]
@@ -61,7 +61,7 @@ def test_resource_copy(server, admin, example_mapped_folder):
         assert fp.read() == file2_contents
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_resource_move(server, admin, example_mapped_folder):
     mapped_folder = example_mapped_folder["girder_root"]
     nested_dir = example_mapped_folder["nested_dir"]
@@ -112,7 +112,7 @@ def test_resource_move(server, admin, example_mapped_folder):
         assert fp.read() == file2_contents
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_resource_delete(server, admin, example_mapped_folder):
     mapped_folder = example_mapped_folder["girder_root"]
     root_path = pathlib.Path(mapped_folder["fsPath"])
@@ -138,7 +138,7 @@ def test_resource_delete(server, admin, example_mapped_folder):
     assert mapped_folder is None
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_lookup(server, admin, user, example_mapped_folder):
     mapped_folder = example_mapped_folder["girder_root"]
 
@@ -207,7 +207,7 @@ def test_lookup(server, admin, user, example_mapped_folder):
         assert resp.json["message"] == msg
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_copy_existing_name(example_mapped_folder, server, user):
     mapped_folder = example_mapped_folder["girder_root"]
     file1 = example_mapped_folder["file1"]
@@ -234,7 +234,7 @@ def test_copy_existing_name(example_mapped_folder, server, user):
     new_file.unlink()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_path(server, user, example_mapped_folder):
     mapped_folder = example_mapped_folder["girder_root"]
     nested_dir = example_mapped_folder["nested_dir"]

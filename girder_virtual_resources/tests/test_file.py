@@ -12,12 +12,12 @@ from girder.settings import SettingKey
 from pytest_girder.assertions import assertStatus, assertStatusOk
 from pytest_girder.utils import getResponseBody
 
-from virtual_resources.rest import VirtualObject
+from girder_virtual_resources.rest import VirtualObject
 
 chunk1, chunk2 = ("hello ", "world")
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_basic_file_ops(server, user, extra_user, example_mapped_folder):
     mapped_folder = example_mapped_folder["girder_root"]
     file2 = example_mapped_folder["file2"]
@@ -142,7 +142,7 @@ def test_basic_file_ops(server, user, extra_user, example_mapped_folder):
     assert not file2.exists()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_upload_file(server, user, extra_user, fsAssetstore, mapped_priv_folder):
     """
     Uploads a non-empty file to the server.
@@ -276,7 +276,7 @@ def test_upload_file(server, user, extra_user, fsAssetstore, mapped_priv_folder)
     assert file["size"] == len(chunk1 + chunk2)
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_upload_odd_cases(server, fsAssetstore, user, extra_user, mapped_priv_folder):
     # Change dest perms to ro
     dest_dir = pathlib.Path(mapped_priv_folder["fsPath"])
@@ -406,7 +406,7 @@ def test_upload_odd_cases(server, fsAssetstore, user, extra_user, mapped_priv_fo
     assert (dest_dir / fobj["name"]).is_file()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_fs_assetstore(server, fsAssetstore, user, mapped_priv_folder):
     """
     Test usage of the Filesystem assetstore type.

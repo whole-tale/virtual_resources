@@ -35,7 +35,7 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install tox
     - name: Run Linter
-      run: tox -e lint -- virtual_resources
+      run: tox -e lint -- girder_virtual_resources
     - name: Run Tests with coverage
       run: tox -e pytest
     - name: Upload Coverage to Codecov

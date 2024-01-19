@@ -10,10 +10,10 @@ import pytest
 from pytest_girder.assertions import assertStatus, assertStatusOk
 from pytest_girder.utils import getResponseBody
 
-from virtual_resources.rest import VirtualObject
+from girder_virtual_resources.rest import VirtualObject
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_basic_folder_ops(server, user, mapped_folder):
     public_folder = mapped_folder
     public_root = mapped_folder["fsPath"]
@@ -77,7 +77,7 @@ def test_basic_folder_ops(server, user, mapped_folder):
     assert not actual_folder_path.exists()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_folder_move(server, user, mapped_folder, mapped_priv_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     dir1 = root_path / "some_dir"
@@ -121,7 +121,7 @@ def test_folder_move(server, user, mapped_folder, mapped_priv_folder):
     dir2.rmdir()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_move_to_root(server, user, mapped_folder, mapped_priv_folder):
     public_folder = mapped_folder
     root_path = pathlib.Path(public_folder["fsPath"])
@@ -150,7 +150,7 @@ def test_move_to_root(server, user, mapped_folder, mapped_priv_folder):
     dir1.rmdir()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_move_acls(server, user, extra_user, mapped_folder, mapped_priv_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     dir1 = root_path / "some_dir"
@@ -191,7 +191,7 @@ def test_move_acls(server, user, extra_user, mapped_folder, mapped_priv_folder):
     dir1.rmdir()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_folder_details(server, user, example_mapped_folder):
     resp = server.request(
         path="/folder/{_id}/details".format(**example_mapped_folder["girder_root"]),
@@ -202,7 +202,7 @@ def test_folder_details(server, user, example_mapped_folder):
     assert resp.json == {"nFolders": 1, "nItems": 1}
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_folder_rootpath(server, user, mapped_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     nested_dir = root_path / "level0" / "level1" / "level2"
@@ -229,7 +229,7 @@ def test_folder_rootpath(server, user, mapped_folder):
     shutil.rmtree((root_path / "level0").as_posix())
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_folder_delete_contents(server, user, mapped_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     nested_dir = root_path / "lone_survivor"
@@ -256,7 +256,7 @@ def test_folder_delete_contents(server, user, mapped_folder):
     nested_dir.rmdir()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_folder_download(server, user, mapped_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     nested_dir = root_path / "lone_survivor"
@@ -285,7 +285,7 @@ def test_folder_download(server, user, mapped_folder):
         # TODO should probably check the content too...
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_folder_copy(server, user, private_folder, mapped_folder, extra_user):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     dir1 = root_path / "source_folder"
@@ -370,7 +370,7 @@ def test_folder_copy(server, user, private_folder, mapped_folder, extra_user):
     ).is_file()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_exists_already(server, user, mapped_folder):
     public_folder = mapped_folder
     root_path = pathlib.Path(public_folder["fsPath"])
@@ -397,7 +397,7 @@ def test_exists_already(server, user, mapped_folder):
     some_dir.rmdir()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_folder_listing(server, user, mapped_folder):
     public_folder = mapped_folder
     root_path = pathlib.Path(public_folder["fsPath"])

@@ -8,10 +8,10 @@ import pytest
 
 from pytest_girder.assertions import assertStatus, assertStatusOk
 
-from virtual_resources.rest import VirtualObject
+from girder_virtual_resources.rest import VirtualObject
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_basic_item_ops(server, user, mapped_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     nested_dir = root_path / "level0"
@@ -99,7 +99,7 @@ def test_basic_item_ops(server, user, mapped_folder):
     shutil.rmtree(nested_dir.as_posix())
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_item_rootpath(server, user, mapped_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     nested_dir = root_path / "level0" / "level1"
@@ -131,7 +131,7 @@ def test_item_rootpath(server, user, mapped_folder):
     shutil.rmtree((root_path / "level0").as_posix())
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_copy_item(server, user, mapped_folder, mapped_priv_folder):
     root_path = pathlib.Path(mapped_folder["fsPath"])
     file1 = root_path / "some_file"
@@ -183,7 +183,7 @@ def test_copy_item(server, user, mapped_folder, mapped_priv_folder):
         assert fp.read() == file_contents
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_copy_item_to_nonmapping(server, user, public_folder, mapped_priv_folder):
     root_path = pathlib.Path(mapped_priv_folder["fsPath"])
     file1 = root_path / "some_file"
@@ -205,7 +205,7 @@ def test_copy_item_to_nonmapping(server, user, public_folder, mapped_priv_folder
     )
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_move_item(
     server, user, mapped_folder, mapped_priv_folder, extra_public_folder
 ):
@@ -292,7 +292,7 @@ def test_move_item(
     file_new.unlink()
 
 
-@pytest.mark.plugin("virtual_resources")
+@pytest.mark.plugin("girder_virtual_resources")
 def test_copy_existing_name(server, user, mapped_priv_folder):
     root_path = pathlib.Path(mapped_priv_folder["fsPath"])
     file1 = root_path / "existing.txt"
